@@ -1,0 +1,103 @@
+# Product Requirements Document: "The Hopper" (Local Content Engine)
+
+## 1. Role & Goal
+You are an expert, top-tier frontend engineer specializing in Next.js (App Router), React, and local-first browser architecture. Your goal is to build a high-performance, entirely serverless web application called "The Hopper." 
+
+This tool automatically ingests a user's social media posts and uses the Claude AI API to repurpose them into different formats. This application is being custom-built for an elite user who demands absolute speed, zero friction, and high information density. 
+
+CRITICAL CONSTRAINT: This app must run ENTIRELY in the browser. There is NO backend. All data fetching (APIs), AI processing, and data storage must happen client-side. The app will be deployed as a static site, but all persistent data must be saved locally on the user's machine.
+
+## 2. Tech Stack & Architecture
+* **Framework:** Next.js (App Router, strict Single Page App mode / Static Export).
+* **Styling:** Tailwind CSS, Framer Motion (only for microscopic, snappy interactions).
+* **State Management:** Zustand.
+* **Storage:** Dexie.js (IndexedDB wrapper) for all persistent local storage. Do not use Postgres, Firebase, or any cloud database.
+* **Data Fetching:** Native client-side `fetch` for external APIs (Apify, Linkdapi).
+* **AI:** `@anthropic-ai/sdk` running strictly client-side, connecting to Claude 3.5 Sonnet.
+* **Asset Generation:** `html-to-image` for rendering and downloading DOM nodes as PNGs.
+* **Audio:** HTML5 Audio API for UI sound design.
+
+
+
+## 3. UI/UX Design System: "Utilitarian Luxury"
+The design must be strictly "Utilitarian Luxury" akin to tools like Linear, Superhuman, or Stripe. 
+CRITICAL DESIGN CONSTRAINT: You must completely avoid all "vibe-coded" design trends. 
+* NO glowing radial blurs.
+* NO glassmorphism or translucent backgrounds.
+* NO dark mode by default (use a stark, clean light mode).
+* NO low-contrast microscopic gray text.
+* NO rounded pill buttons.
+
+### Visual Rules:
+* **Colors:** Strict monochrome foundation. Background: `#FAFAFA` or `#FFFFFF`. Borders: `#E5E5E5`. Text: `#111827`.
+* **Accent Color:** Use ONE high-visibility accent color (e.g., `#FF4F00` Safety Orange) reserved exclusively for the primary "Approve & Publish" action.
+* **Typography:** Use a workhorse sans-serif like `Inter` or `system-ui`. Headers are bold and black. UI data points (scores, metadata) must use a monospace font like `JetBrains Mono` or `ui-monospace`.
+* **Borders & Elevation:** Use crisp 1px solid borders to separate containers. Do not use background shading to separate sections. Use harsh, short-spread drop shadows only for active dropdowns or modals to simulate physical paper elevation.
+
+
+
+## 4. Layout: The Three-Column Dashboard
+The main interface is a keyboard-centric, full-screen workspace.
+
+* **Column 1 (Source Feed):** A chronological list of the user's original posts fetched from Apify/Linkdapi. The active post is highlighted. 
+* **Column 2 (The Workshop):** The core workspace. It contains tabs for generated variations (LinkedIn, Twitter, IG Carousel, Newsletter). The active tab displays an editable `<textarea>`.
+* **Column 3 (The Preview):** A live visual preview rendering the text as it will look natively on the selected platform.
+
+
+
+## 5. Core Features & "Quality of Design" Requirements
+You must implement the following features exactly as described to achieve a magical user experience.
+
+### A. Local Storage & Zero Setup
+* The app must load instantly.
+* Hardcode the API keys (Apify, Linkdapi, Claude) securely in the client logic for this specific single-user deployment.
+* On mount, load all saved drafts and rejected posts from Dexie.js.
+
+### B. Keyboard-First Navigation
+Implement hotkeys using `react-hotkeys-hook`. The user should not need a mouse.
+* `J` / `K`: Move up and down the Source Feed.
+* `A`: Approve current draft.
+* `R`: Reject current draft.
+* `Cmd + Enter`: Omni-Export the approved draft.
+* Visual Cue: Every clickable button must display its keyboard shortcut in a small, stylized `<kbd>` tag.
+
+### C. The Flesch-Kincaid Enforcer
+* Build a live readability calculator above the workshop textarea. 
+* It must evaluate the text in real-time. 
+* Target score: 5th to 7th-grade reading level. 
+* If the score exceeds 8th grade, the numerical badge must turn a subtle warning yellow.
+
+### D. The "Anti-AI" Vibe Check
+* Next to the Flesch-Kincaid score, include a monospace "Human Score" badge. 
+* This defaults to 100%. 
+* Create an array of banned AI words (e.g., "delve", "tapestry", "robust", "dynamic"). If the textarea contains these words, drop the score and highlight the offending word.
+
+### E. Micro-Tools (The Buttons)
+Place these action buttons near the textarea:
+* **"Make it Punchier":** Triggers a Claude prompt to reduce the draft's word count by 20% and increase sentence contrast.
+* **The "Hater" Simulator (Red Team):** Triggers a Claude prompt to generate a cynical, opposing reply to the current draft. Display this in a small, absolute-positioned tooltip.
+* **The "Shaan" Toggle:** A small switch that rewrites the current draft to sound like Shaan Puri (using slang, specific frameworks, and a highly conversational tone).
+
+### F. The Swipe File Graveyard
+* When the user presses `R` (Reject), do not delete the data.
+* Play a fast Framer Motion unmount animation.
+* Save the rejected draft to a specific "Swipe File" table in Dexie.js so the user can review discarded hooks later.
+
+### G. Tactile Sound Design
+* Integrate the HTML5 Audio API.
+* Play a subtle, high-quality mechanical keyboard "thwack" `.wav` file on Approve.
+* Play a soft "swoosh" `.wav` file on Export or Reject.
+
+### H. Omni-Export & Formatting Hacks
+When `Cmd + Enter` is pressed, the `handlePublish()` function must fire.
+* **For Text (LinkedIn):** Copy the text to the clipboard. The script MUST inject invisible zero-width spaces (`\u200B`) on empty line breaks to bypass LinkedIn's formatting removal.
+* **For Images (IG Carousels/Quote Cards):** Use `html-to-image`. Automatically hang quotation marks outside the optical margin of the text block for professional typography. Trigger a native ZIP download of the generated PNGs.
+* **Future Proofing:** Architect `handlePublish()` so that a direct POST request to social APIs can be added inside the function later without refactoring the state logic.
+
+## 6. Execution Instructions for Cursor
+1. **Phase 1:** Scaffold the Next.js App Router project. Set up Tailwind, Zustand, and Dexie.js. 
+2. **Phase 2:** Build the UI shell. Implement the Utilitarian Luxury design system (Column 1, 2, and 3) using mock static data. Do not build API logic yet.
+3. **Phase 3:** Implement keyboard shortcuts, Framer Motion snap animations, and the Flesch-Kincaid live scoring logic.
+4. **Phase 4:** Integrate the Anthropic SDK client-side and set up the local data flow from prompt to textarea to Dexie.js.
+
+Do not skip any constraints. Begin Phase 1 immediately.
