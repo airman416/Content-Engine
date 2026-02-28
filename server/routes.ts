@@ -11,6 +11,114 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express,
 ): Promise<Server> {
+  app.get("/api/feed/twitter", async (req, res) => {
+    try {
+      const token = process.env.APIFY_API_KEY;
+      if (!token) return res.status(500).json({ error: "APIFY_API_KEY not set" });
+
+      const response = await fetch(
+        `https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items?token=${token}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            twitterHandles: ["thesamparr"],
+            maxItems: 10,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Apify Twitter error:", text);
+        return res.status(response.status).json({ error: "Apify Twitter fetch failed" });
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("Twitter feed error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/feed/instagram", async (req, res) => {
+    try {
+      const token = process.env.APIFY_API_KEY;
+      if (!token) return res.status(500).json({ error: "APIFY_API_KEY not set" });
+
+      const response = await fetch(
+        `https://api.apify.com/v2/acts/apidojo~instagram-scraper/run-sync-get-dataset-items?token=${token}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startUrls: ["https://www.instagram.com/thesamparr/"],
+            maxItems: 10,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Apify Instagram error:", text);
+        return res.status(response.status).json({ error: "Apify Instagram fetch failed" });
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("Instagram feed error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/feed/linkedin", async (req, res) => {
+    try {
+      const token = process.env.LINKEDAPI_API_KEY;
+      if (!token) return res.status(500).json({ error: "LINKEDAPI_API_KEY not set" });
+
+      const response = await fetch(
+        "https://linkdapi.com/api/v1/profile/posts?urn=ACoAAAt8nxwBrEPNpBTNouIQJu8BAIje750mmC0",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("LinkdAPI error:", text);
+        return res.status(response.status).json({ error: "LinkdAPI fetch failed" });
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("LinkedIn feed error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/proxy/image", async (req, res) => {
+    try {
+      const url = req.query.url as string;
+      if (!url) return res.status(400).json({ error: "URL required" });
+
+      const response = await fetch(url);
+      if (!response.ok) return res.status(response.status).send("Failed to fetch image");
+
+      const contentType = response.headers.get("content-type") || "image/jpeg";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      res.send(buffer);
+    } catch (error: any) {
+      console.error("Image proxy error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/ai/generate", async (req, res) => {
     try {
       const { content, platform, sourceContent } = req.body;
@@ -20,6 +128,7 @@ export async function registerRoutes(
         twitter: `Rewrite this social media post for Twitter/X. Keep it under 280 characters if possible, or make it a concise thread-worthy post. Make it sharp, witty, and direct. No hashtags. No emojis.`,
         instagram: `Rewrite this social media post for an Instagram carousel. Break it into 5-7 slide-worthy chunks, separated by ---. First slide should be a hook. Last slide should be a CTA. Keep each chunk to 2-3 short sentences max.`,
         newsletter: `Rewrite this social media post as a newsletter section. Expand on the ideas with more depth and examples. Use a conversational tone like you're writing to a friend. Add a compelling subject line at the top prefixed with "Subject: ".`,
+        quote: `Extract the single most powerful, quotable sentence or idea from this post. If there isn't one clear sentence, distill the core idea into one punchy, standalone quote. Keep it under 30 words. Return ONLY the quote text, nothing else.`,
       };
 
       const message = await anthropic.messages.create({

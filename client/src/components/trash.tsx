@@ -1,25 +1,25 @@
 import { useState, useEffect } from "react";
-import { db, type SwipeFileEntry } from "@/lib/db";
+import { db, type TrashEntry } from "@/lib/db";
 import { useHopperStore } from "@/lib/store";
 import { formatDistanceToNow } from "date-fns";
-import { X, Archive, RotateCcw, Trash2 } from "lucide-react";
+import { X, Trash2 as TrashIcon, RotateCcw, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function SwipeFile() {
-  const { showSwipeFile, setShowSwipeFile } = useHopperStore();
-  const [entries, setEntries] = useState<SwipeFileEntry[]>([]);
+export default function Trash() {
+  const { showTrash, setShowTrash } = useHopperStore();
+  const [entries, setEntries] = useState<TrashEntry[]>([]);
 
   useEffect(() => {
-    if (showSwipeFile) {
-      db.swipeFile
+    if (showTrash) {
+      db.trash
         .orderBy("rejectedAt")
         .reverse()
         .toArray()
         .then(setEntries);
     }
-  }, [showSwipeFile]);
+  }, [showTrash]);
 
-  const handleRestore = async (entry: SwipeFileEntry) => {
+  const handleRestore = async (entry: TrashEntry) => {
     await db.drafts.add({
       sourcePostId: entry.sourcePostId,
       platform: entry.platform as any,
@@ -28,18 +28,18 @@ export default function SwipeFile() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    await db.swipeFile.delete(entry.id!);
+    await db.trash.delete(entry.id!);
     setEntries(entries.filter((e) => e.id !== entry.id));
     const allDrafts = await db.drafts.toArray();
     useHopperStore.getState().setDrafts(allDrafts);
   };
 
   const handleDelete = async (id: number) => {
-    await db.swipeFile.delete(id);
+    await db.trash.delete(id);
     setEntries(entries.filter((e) => e.id !== id));
   };
 
-  if (!showSwipeFile) return null;
+  if (!showTrash) return null;
 
   return (
     <AnimatePresence>
@@ -48,7 +48,7 @@ export default function SwipeFile() {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center"
-        onClick={() => setShowSwipeFile(false)}
+        onClick={() => setShowTrash(false)}
       >
         <motion.div
           initial={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -64,17 +64,17 @@ export default function SwipeFile() {
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E5E5]">
             <div className="flex items-center gap-2">
-              <Archive className="w-4 h-4 text-[#666]" />
+              <TrashIcon className="w-4 h-4 text-[#666]" />
               <h2 className="text-[15px] font-semibold text-[#111827]">
-                Swipe File
+                Trash
               </h2>
               <span className="text-[12px] font-mono text-[#999] ml-1">
                 {entries.length} rejected
               </span>
             </div>
             <button
-              data-testid="button-close-swipefile"
-              onClick={() => setShowSwipeFile(false)}
+              data-testid="button-close-trash"
+              onClick={() => setShowTrash(false)}
               className="text-[#999] hover:text-[#666] transition-colors"
             >
               <X className="w-4 h-4" />

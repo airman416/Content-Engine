@@ -1,7 +1,7 @@
 import { useHopperStore } from "@/lib/store";
 import type { SourcePost } from "@/lib/db";
 import { formatDistanceToNow } from "date-fns";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { SiLinkedin, SiX, SiInstagram } from "react-icons/si";
 
 const platformBrandIcons: Record<string, typeof SiLinkedin> = {
@@ -63,15 +63,20 @@ function PostCard({
 }
 
 export default function SourceFeed() {
-  const { sourcePosts, selectedPostIndex, setSelectedPostIndex } =
+  const { sourcePosts, selectedPostIndex, setSelectedPostIndex, isFeedLoading } =
     useHopperStore();
 
   return (
     <div className="h-full flex flex-col bg-[#FAFAFA]">
       <div className="flex items-center justify-between px-4 h-[49px] border-b border-[#E5E5E5]">
-        <h2 className="text-[13px] font-semibold text-[#111827] tracking-tight">
-          Source Feed
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-[13px] font-semibold text-[#111827] tracking-tight">
+            Source Feed
+          </h2>
+          {isFeedLoading && (
+            <Loader2 className="w-3 h-3 animate-spin text-[#999]" />
+          )}
+        </div>
         <div className="flex items-center gap-1">
           <kbd className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-mono text-[#666] bg-[#F0F0F0] border border-[#E0E0E0] rounded-sm">
             J
@@ -82,9 +87,14 @@ export default function SourceFeed() {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {sourcePosts.length === 0 ? (
+        {sourcePosts.length === 0 && !isFeedLoading ? (
           <div className="flex items-center justify-center h-32 text-[13px] text-[#999]">
             No posts loaded
+          </div>
+        ) : sourcePosts.length === 0 && isFeedLoading ? (
+          <div className="flex flex-col items-center justify-center h-32 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin text-[#999]" />
+            <span className="text-[13px] text-[#999]">Loading live feed...</span>
           </div>
         ) : (
           sourcePosts.map((post, index) => (

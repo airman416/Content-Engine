@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useHopperStore, type PlatformTab } from "@/lib/store";
 import { db, type Draft } from "@/lib/db";
 import {
@@ -29,6 +29,7 @@ const TABS: { key: PlatformTab; label: string }[] = [
   { key: "twitter", label: "Twitter/X" },
   { key: "instagram", label: "IG Carousel" },
   { key: "newsletter", label: "Newsletter" },
+  { key: "quote", label: "Quote" },
 ];
 
 export default function Workshop() {
@@ -198,7 +199,7 @@ export default function Workshop() {
     if (!activeDraft?.id) return;
     setRejectedId(activeDraft.id);
 
-    await db.swipeFile.add({
+    await db.trash.add({
       draftId: activeDraft.id,
       sourcePostId: activeDraft.sourcePostId,
       content: activeDraft.content,
@@ -250,7 +251,7 @@ export default function Workshop() {
       if (soundEnabled) playExportSound();
       toast({
         title: "Copied to clipboard",
-        description: "Newsletter section copied.",
+        description: `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} text copied.`,
       });
     }
   }, [activeDraft, activeTab, soundEnabled]);

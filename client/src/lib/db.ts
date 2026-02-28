@@ -5,6 +5,8 @@ export interface SourcePost {
   platform: "twitter" | "linkedin" | "instagram";
   content: string;
   author: string;
+  authorHandle?: string;
+  profilePhoto?: string;
   timestamp: string;
   url?: string;
   metrics?: {
@@ -17,14 +19,14 @@ export interface SourcePost {
 export interface Draft {
   id?: number;
   sourcePostId: number;
-  platform: "linkedin" | "twitter" | "instagram" | "newsletter";
+  platform: "linkedin" | "twitter" | "instagram" | "newsletter" | "quote";
   content: string;
   status: "draft" | "approved" | "rejected";
   createdAt: string;
   updatedAt: string;
 }
 
-export interface SwipeFileEntry {
+export interface TrashEntry {
   id?: number;
   draftId: number;
   sourcePostId: number;
@@ -37,7 +39,7 @@ export interface SwipeFileEntry {
 class HopperDB extends Dexie {
   sourcePosts!: Table<SourcePost>;
   drafts!: Table<Draft>;
-  swipeFile!: Table<SwipeFileEntry>;
+  trash!: Table<TrashEntry>;
 
   constructor() {
     super("HopperDB");
@@ -46,10 +48,130 @@ class HopperDB extends Dexie {
       drafts: "++id, sourcePostId, platform, status, createdAt",
       swipeFile: "++id, draftId, sourcePostId, platform, rejectedAt",
     });
+    this.version(2).stores({
+      sourcePosts: "++id, platform, timestamp",
+      drafts: "++id, sourcePostId, platform, status, createdAt",
+      trash: "++id, draftId, sourcePostId, platform, rejectedAt",
+      swipeFile: null,
+    }).upgrade(async (tx) => {
+      const oldEntries = await tx.table("swipeFile").toArray();
+      if (oldEntries.length > 0) {
+        await tx.table("trash").bulkAdd(oldEntries);
+      }
+    });
   }
 }
 
 export const db = new HopperDB();
+
+export async function loadLiveFeed(): Promise<{
+  posts: SourcePost[];
+  profilePhoto: string | null;
+}> {
+  const allPosts: SourcePost[] = [];
+  let profilePhoto: string | null = null;
+
+  try {
+    const twitterRes = await fetch("/api/feed/twitter");
+    if (twitterRes.ok) {
+      const tweets = await twitterRes.json();
+      if (Array.isArray(tweets)) {
+        for (const tweet of tweets.slice(0, 10)) {
+          const text = tweet.full_text || tweet.text || tweet.tweet_text || "";
+          if (!text) continue;
+          if (!profilePhoto && (tweet.author_profile_image_url || tweet.profile_image_url || tweet.user?.profile_image_url_https)) {
+            profilePhoto = tweet.author_profile_image_url || tweet.profile_image_url || tweet.user?.profile_image_url_https;
+          }
+          allPosts.push({
+            platform: "twitter",
+            content: text,
+            author: tweet.author_name || tweet.user?.name || "Sam Parr",
+            authorHandle: tweet.author_username || tweet.user?.screen_name || "thesamparr",
+            profilePhoto: tweet.author_profile_image_url || tweet.profile_image_url || tweet.user?.profile_image_url_https || undefined,
+            timestamp: tweet.created_at || new Date().toISOString(),
+            url: tweet.tweet_url || tweet.url || undefined,
+            metrics: {
+              likes: tweet.favorite_count || tweet.likes || 0,
+              comments: tweet.reply_count || tweet.replies || 0,
+              shares: tweet.retweet_count || tweet.retweets || 0,
+            },
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Twitter feed error:", e);
+  }
+
+  try {
+    const linkedinRes = await fetch("/api/feed/linkedin");
+    if (linkedinRes.ok) {
+      const data = await linkedinRes.json();
+      const posts = Array.isArray(data) ? data : data.posts || data.data || [];
+      for (const post of posts.slice(0, 10)) {
+        const text = post.text || post.commentary || post.content || "";
+        if (!text) continue;
+        if (!profilePhoto && post.authorProfilePicture) {
+          profilePhoto = post.authorProfilePicture;
+        }
+        allPosts.push({
+          platform: "linkedin",
+          content: text,
+          author: post.authorName || post.author?.name || "Sam Parr",
+          authorHandle: post.authorHeadline || "",
+          profilePhoto: post.authorProfilePicture || undefined,
+          timestamp: post.postedDate || post.created_at || new Date().toISOString(),
+          url: post.postUrl || post.url || undefined,
+          metrics: {
+            likes: post.numLikes || post.likes || 0,
+            comments: post.numComments || post.comments || 0,
+            shares: post.numShares || post.shares || 0,
+          },
+        });
+      }
+    }
+  } catch (e) {
+    console.error("LinkedIn feed error:", e);
+  }
+
+  try {
+    const igRes = await fetch("/api/feed/instagram");
+    if (igRes.ok) {
+      const igPosts = await igRes.json();
+      if (Array.isArray(igPosts)) {
+        for (const post of igPosts.slice(0, 10)) {
+          const text = post.caption || post.text || "";
+          if (!text) continue;
+          if (!profilePhoto && post.ownerProfilePicUrl) {
+            profilePhoto = post.ownerProfilePicUrl;
+          }
+          allPosts.push({
+            platform: "instagram",
+            content: text,
+            author: post.ownerFullName || post.ownerUsername || "Sam Parr",
+            authorHandle: post.ownerUsername || "thesamparr",
+            profilePhoto: post.ownerProfilePicUrl || undefined,
+            timestamp: post.timestamp || new Date().toISOString(),
+            url: post.url || undefined,
+            metrics: {
+              likes: post.likesCount || 0,
+              comments: post.commentsCount || 0,
+              shares: 0,
+            },
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Instagram feed error:", e);
+  }
+
+  allPosts.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  );
+
+  return { posts: allPosts, profilePhoto };
+}
 
 export async function seedMockData() {
   const count = await db.sourcePosts.count();
@@ -59,85 +181,53 @@ export async function seedMockData() {
   const posts: SourcePost[] = [
     {
       platform: "twitter",
-      content:
-        "The best founders I know don't pitch their product.\n\nThey describe the problem so clearly that the listener sells themselves on the solution.\n\nStop selling. Start storytelling.",
-      author: "You",
+      content: "The best founders I know don't pitch their product.\n\nThey describe the problem so clearly that the listener sells themselves on the solution.\n\nStop selling. Start storytelling.",
+      author: "Sam Parr",
+      authorHandle: "thesamparr",
       timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 2).toISOString(),
       metrics: { likes: 2847, comments: 143, shares: 892 },
     },
     {
       platform: "linkedin",
-      content:
-        "I spent 6 months building a feature nobody asked for.\n\nThe result? Zero adoption.\n\nThen I spent 2 weeks talking to customers. Built exactly what they described in their own words.\n\nResult: 40% adoption in the first week.\n\nThe lesson isn't \"talk to customers.\" Everyone says that.\n\nThe real lesson: Your job isn't to be creative. Your job is to be a translator.\n\nTranslate pain into product. That's it.",
-      author: "You",
+      content: "I spent 6 months building a feature nobody asked for.\n\nThe result? Zero adoption.\n\nThen I spent 2 weeks talking to customers. Built exactly what they described in their own words.\n\nResult: 40% adoption in the first week.\n\nThe lesson isn't \"talk to customers.\" Everyone says that.\n\nThe real lesson: Your job isn't to be creative. Your job is to be a translator.\n\nTranslate pain into product. That's it.",
+      author: "Sam Parr",
+      authorHandle: "thesamparr",
       timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24).toISOString(),
       metrics: { likes: 12840, comments: 567, shares: 2100 },
     },
     {
       platform: "twitter",
-      content:
-        "Unpopular opinion: Most SaaS pricing pages are optimized for the company, not the customer.\n\nIf I have to schedule a call to learn your price, I'm already looking at your competitor.",
-      author: "You",
-      timestamp: new Date(
-        now.getTime() - 1000 * 60 * 60 * 24 * 2,
-      ).toISOString(),
+      content: "Unpopular opinion: Most SaaS pricing pages are optimized for the company, not the customer.\n\nIf I have to schedule a call to learn your price, I'm already looking at your competitor.",
+      author: "Sam Parr",
+      authorHandle: "thesamparr",
+      timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 2).toISOString(),
       metrics: { likes: 5621, comments: 387, shares: 1243 },
     },
     {
       platform: "linkedin",
-      content:
-        "The 3 skills that made me a better leader than any MBA:\n\n1. Writing clearly - if you can't write it, you can't think it\n2. Saying no - the best strategy is knowing what you won't do\n3. Hiring slow - one great person beats three good ones\n\nNone of these were taught in school. All of them were learned through expensive mistakes.",
-      author: "You",
-      timestamp: new Date(
-        now.getTime() - 1000 * 60 * 60 * 24 * 3,
-      ).toISOString(),
+      content: "The 3 skills that made me a better leader than any MBA:\n\n1. Writing clearly - if you can't write it, you can't think it\n2. Saying no - the best strategy is knowing what you won't do\n3. Hiring slow - one great person beats three good ones\n\nNone of these were taught in school. All of them were learned through expensive mistakes.",
+      author: "Sam Parr",
+      authorHandle: "thesamparr",
+      timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 3).toISOString(),
       metrics: { likes: 8934, comments: 423, shares: 1567 },
     },
     {
       platform: "twitter",
-      content:
-        "Your startup doesn't have a marketing problem.\n\nIt has a clarity problem.\n\nIf a 12-year-old can't explain what you do after visiting your homepage, rewrite it.",
-      author: "You",
-      timestamp: new Date(
-        now.getTime() - 1000 * 60 * 60 * 24 * 5,
-      ).toISOString(),
+      content: "Your startup doesn't have a marketing problem.\n\nIt has a clarity problem.\n\nIf a 12-year-old can't explain what you do after visiting your homepage, rewrite it.",
+      author: "Sam Parr",
+      authorHandle: "thesamparr",
+      timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 5).toISOString(),
       metrics: { likes: 9102, comments: 412, shares: 2890 },
     },
     {
       platform: "instagram",
-      content:
-        "Build in public they said.\n\nSo I shared my revenue numbers, my failures, my process.\n\nThe result wasn't more customers. It was better customers.\n\nPeople who already trusted the way I think before they ever bought.",
-      author: "You",
-      timestamp: new Date(
-        now.getTime() - 1000 * 60 * 60 * 24 * 7,
-      ).toISOString(),
+      content: "Build in public they said.\n\nSo I shared my revenue numbers, my failures, my process.\n\nThe result wasn't more customers. It was better customers.\n\nPeople who already trusted the way I think before they ever bought.",
+      author: "Sam Parr",
+      authorHandle: "thesamparr",
+      timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 7).toISOString(),
       metrics: { likes: 4231, comments: 198, shares: 876 },
     },
   ];
 
   await db.sourcePosts.bulkAdd(posts);
-
-  const allPosts = await db.sourcePosts.toArray();
-  const drafts: Draft[] = [
-    {
-      sourcePostId: allPosts[0].id!,
-      platform: "linkedin",
-      content:
-        "Stop pitching your product.\n\nThe best founders I know never open with features or benefits. They describe the problem so clearly, so viscerally, that the listener sells themselves on the solution.\n\nI watched a founder raise $4M in a single meeting. He never mentioned his product for the first 20 minutes. He just painted a picture of the world as it is - broken, frustrating, expensive.\n\nBy the time he said \"here's what we built,\" the investors were already nodding.\n\nStop selling. Start storytelling.\n\nThe product demo comes after the emotional hook, not before it.",
-      status: "draft",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      sourcePostId: allPosts[0].id!,
-      platform: "twitter",
-      content:
-        "Founders: stop opening with your product.\n\nDescribe the problem so clearly that the listener sells themselves.\n\nI watched someone raise $4M without mentioning their product for 20 min.\n\nHe painted the broken world. Investors were nodding before the demo.\n\nStorytelling > Selling.",
-      status: "draft",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
-
-  await db.drafts.bulkAdd(drafts);
 }

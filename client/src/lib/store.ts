@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { SourcePost, Draft } from "./db";
 
-export type PlatformTab = "linkedin" | "twitter" | "instagram" | "newsletter";
+export type PlatformTab = "linkedin" | "twitter" | "instagram" | "newsletter" | "quote";
 
 interface HopperState {
   sourcePosts: SourcePost[];
@@ -30,8 +30,27 @@ interface HopperState {
   soundEnabled: boolean;
   toggleSound: () => void;
 
-  showSwipeFile: boolean;
-  setShowSwipeFile: (show: boolean) => void;
+  showTrash: boolean;
+  setShowTrash: (show: boolean) => void;
+
+  profilePhoto: string | null;
+  setProfilePhoto: (url: string | null) => void;
+
+  isFeedLoading: boolean;
+  setFeedLoading: (loading: boolean) => void;
+
+  assetBgColor: string;
+  setAssetBgColor: (color: string) => void;
+  assetTextColor: string;
+  setAssetTextColor: (color: string) => void;
+  assetFont: string;
+  setAssetFont: (font: string) => void;
+  assetDimension: "1080x1080" | "1080x1350" | "1080x1920";
+  setAssetDimension: (dim: "1080x1080" | "1080x1350" | "1080x1920") => void;
+  assetAlign: "left" | "center" | "right";
+  setAssetAlign: (align: "left" | "center" | "right") => void;
+  mockupBgColor: string;
+  setMockupBgColor: (color: string) => void;
 }
 
 export const useHopperStore = create<HopperState>((set, get) => ({
@@ -78,6 +97,25 @@ export const useHopperStore = create<HopperState>((set, get) => ({
   soundEnabled: true,
   toggleSound: () => set((s) => ({ soundEnabled: !s.soundEnabled })),
 
-  showSwipeFile: false,
-  setShowSwipeFile: (show) => set({ showSwipeFile: show }),
+  showTrash: false,
+  setShowTrash: (show) => set({ showTrash: show }),
+
+  profilePhoto: null,
+  setProfilePhoto: (url) => set({ profilePhoto: url }),
+
+  isFeedLoading: false,
+  setFeedLoading: (loading) => set({ isFeedLoading: loading }),
+
+  assetBgColor: "#F5F5F0",
+  setAssetBgColor: (color) => set({ assetBgColor: color }),
+  assetTextColor: "#1B4332",
+  setAssetTextColor: (color) => set({ assetTextColor: color }),
+  assetFont: "Inter",
+  setAssetFont: (font) => set({ assetFont: font }),
+  assetDimension: "1080x1080",
+  setAssetDimension: (dim) => set({ assetDimension: dim }),
+  assetAlign: "center",
+  setAssetAlign: (align) => set({ assetAlign: align }),
+  mockupBgColor: "#F0EDE6",
+  setMockupBgColor: (color) => set({ mockupBgColor: color }),
 }));

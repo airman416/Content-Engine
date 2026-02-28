@@ -1,13 +1,13 @@
 import { useEffect, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useHopperStore } from "@/lib/store";
-import { db, seedMockData } from "@/lib/db";
+import { db, seedMockData, loadLiveFeed } from "@/lib/db";
 import SourceFeed from "@/components/source-feed";
 import Workshop from "@/components/workshop";
 import Preview from "@/components/preview";
-import SwipeFile from "@/components/swipe-file";
+import Trash from "@/components/trash";
 import { playApproveSound, playRejectSound, playExportSound } from "@/lib/sounds";
-import { Archive, Volume2, VolumeX, Keyboard } from "lucide-react";
+import { Trash2, Volume2, VolumeX, Keyboard } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -22,16 +22,51 @@ export default function Dashboard() {
     activeTab,
     soundEnabled,
     toggleSound,
-    setShowSwipeFile,
+    setShowTrash,
     setAiLoading,
     isAiLoading,
+    setProfilePhoto,
+    setFeedLoading,
   } = useHopperStore();
 
   const { toast } = useToast();
 
   useEffect(() => {
     async function init() {
-      await seedMockData();
+      setFeedLoading(true);
+
+      try {
+        const { posts: livePosts, profilePhoto } = await loadLiveFeed();
+
+        if (livePosts.length > 0) {
+          const existingPosts = await db.sourcePosts.toArray();
+          const existingContentSet = new Set(existingPosts.map((p) => p.content.slice(0, 100)));
+
+          const newPosts = livePosts.filter(
+            (p) => !existingContentSet.has(p.content.slice(0, 100)),
+          );
+
+          if (newPosts.length > 0) {
+            await db.sourcePosts.bulkAdd(newPosts);
+          }
+
+          if (profilePhoto) {
+            setProfilePhoto(profilePhoto);
+          }
+        }
+
+        const existingCount = await db.sourcePosts.count();
+        if (existingCount === 0) {
+          await seedMockData();
+        }
+      } catch (e) {
+        console.error("Live feed failed, using mock data:", e);
+        const existingCount = await db.sourcePosts.count();
+        if (existingCount === 0) {
+          await seedMockData();
+        }
+      }
+
       const posts = await db.sourcePosts
         .orderBy("timestamp")
         .reverse()
@@ -39,6 +74,7 @@ export default function Dashboard() {
       setSourcePosts(posts);
       const allDrafts = await db.drafts.toArray();
       setDrafts(allDrafts);
+      setFeedLoading(false);
     }
     init();
   }, []);
@@ -78,7 +114,7 @@ export default function Dashboard() {
     "r",
     async () => {
       if (!activeDraft?.id) return;
-      await db.swipeFile.add({
+      await db.trash.add({
         draftId: activeDraft.id,
         sourcePostId: activeDraft.sourcePostId,
         content: activeDraft.content,
@@ -197,7 +233,7 @@ export default function Dashboard() {
             The Hopper
           </h1>
           <span className="text-[11px] font-mono text-[#999] bg-[#F5F5F5] px-2 py-0.5 border border-[#E5E5E5]" style={{ borderRadius: "2px" }}>
-            v1.0
+            v2.0
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -211,13 +247,13 @@ export default function Dashboard() {
             <span className="hidden sm:inline">Shortcuts</span>
           </button>
           <button
-            data-testid="button-swipefile"
-            onClick={() => setShowSwipeFile(true)}
+            data-testid="button-trash"
+            onClick={() => setShowTrash(true)}
             className="inline-flex items-center gap-1.5 h-7 px-2.5 text-[11px] font-medium text-[#999] bg-[#FAFAFA] border border-[#E5E5E5] transition-colors hover-elevate"
             style={{ borderRadius: "3px" }}
           >
-            <Archive className="w-3 h-3" />
-            <span className="hidden sm:inline">Swipe File</span>
+            <Trash2 className="w-3 h-3" />
+            <span className="hidden sm:inline">Trash</span>
           </button>
           <button
             data-testid="button-sound-toggle"
@@ -246,7 +282,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <SwipeFile />
+      <Trash />
     </div>
   );
 }
