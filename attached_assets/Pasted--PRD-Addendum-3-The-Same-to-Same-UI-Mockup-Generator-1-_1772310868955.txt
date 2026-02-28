@@ -1,0 +1,60 @@
+# PRD Addendum 3: The "Same-to-Same" UI Mockup Generator
+
+## 1. Feature Overview
+When the user converts a post to its original format (e.g., X to X, or LinkedIn to LinkedIn), the Workshop Preview column must transform into a high-fidelity Mockup Generator similar to Poet.so or TweetPik. 
+
+Instead of exporting raw text, the tool will generate a pixel-perfect React component mirroring the native social media platform's UI, wrap it in a stylized background canvas, and export it as a high-resolution PNG.
+
+
+
+## 2. Component Architecture
+The Mockup Generator consists of three distinct layers.
+
+### Layer 1: The Canvas (Outer Wrapper)
+This is the background that frames the social card.
+* **Padding Controls:** A slider or toggle set allowing the user to adjust the canvas padding (e.g., `sm: 32px`, `md: 64px`, `lg: 128px`, `xl: 256px`).
+* **Background Engine:** Provide a selector for the canvas background.
+  * *Solid Colors:* Include the Hampton Cream (`#F5F5F0`) and standard brand colors.
+  * *Gradients:* Include 4 to 5 premium, subtle linear gradients (e.g., soft gray to white, or a very subtle green-tinted Hampton gradient).
+* **Aspect Ratio Lock:** A toggle to lock the outer canvas to specific aspect ratios for sharing (1:1 for IG Grid, 16:9 for Video Thumbnails, Auto for natural wrapping).
+
+### Layer 2: The Social Card (Inner UI)
+This is the fake native UI. You must create dedicated React components for each platform (`<MockTwitterCard />`, `<MockLinkedInCard />`).
+* **Card Container:** Pure white background, `border-radius: 12px`, and a crisp, high-quality drop shadow (e.g., `box-shadow: 0 20px 40px -10px rgba(0,0,0,0.1)`). 
+* **Typography:** Match the native platforms precisely. 
+  * X (Twitter): Use standard system fonts (`system-ui`, `-apple-system`, `BlinkMacSystemFont`).
+  * LinkedIn: Use `System-ui` or `Segoe UI`.
+* **Dynamic Injection:** The component must dynamically inject the active draft's text, the user's name ("Sam Parr"), handle ("@thesamparr"), and the current date/time.
+* **Verified Badge:** Include an SVG of the X Premium blue checkmark next to the name on the `<MockTwitterCard />`.
+* **Engagement Metrics:** Add a toggle to "Show Fake Metrics". If toggled on, display random but realistic numbers for likes, reposts, and bookmarks at the bottom of the card using the native SVG icons for those actions.
+
+### Layer 3: The Control Panel
+A settings panel located above or beside the preview canvas containing all the toggles mentioned above (Padding, Background, Aspect Ratio, Metrics Toggle).
+
+## 3. Technical Implementation & Critical Constraints
+
+### A. The CORS Profile Picture Fix (CRITICAL)
+`html-to-image` will silently fail or output a blank canvas if it attempts to render an image hosted on an external domain (like a Twitter or LinkedIn CDN) due to Canvas API CORS restrictions. 
+* **The Solution:** When fetching the user's profile picture from Apify/Linkdapi, you MUST convert the image URL into a Base64 string client-side before passing it to the `<MockTwitterCard />` or `<MockLinkedInCard />`. 
+* The `src` attribute of the profile `<img />` tag inside the mockup must be a Base64 data URI.
+
+### B. High-Resolution Export
+To ensure the exported PNG is retina-quality and not blurry, configure `html-to-image` with a high pixel ratio.
+```javascript
+import { toPng } from 'html-to-image';
+
+// Example configuration for the export function
+toPng(canvasRef.current, { 
+  pixelRatio: 3, // Multiplies resolution for crisp text
+  quality: 1.0,
+  skipFonts: false // Ensure system fonts are captured
+})
+C. Text Formatting inside the Mockup
+The active text drafted in the Workshop must render exactly as typed inside the Mockup Card.
+
+Preserve all line breaks using whitespace-pre-wrap CSS on the text container.
+
+If the text contains URLs or hashtags, they should ideally be styled with the native link color (e.g., Twitter Blue #1DA1F2 for the <MockTwitterCard />).
+
+
+***

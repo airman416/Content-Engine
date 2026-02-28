@@ -11,6 +11,8 @@ import {
   AlignRight,
   Quote,
   Loader2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
@@ -33,6 +35,26 @@ const DIMENSIONS: { key: "1080x1080" | "1080x1350" | "1080x1920"; label: string;
   { key: "1080x1920", label: "Story", w: 1080, h: 1920 },
 ];
 
+const PADDING_MAP = { sm: 32, md: 64, lg: 128, xl: 256 } as const;
+const PADDING_PREVIEW_MAP = { sm: 16, md: 32, lg: 48, xl: 64 } as const;
+
+const SOLID_COLORS = [
+  { label: "Hampton Cream", value: "#F5F5F0" },
+  { label: "White", value: "#FFFFFF" },
+  { label: "Light Gray", value: "#F0F0F0" },
+  { label: "Charcoal", value: "#1A1A2E" },
+  { label: "Hampton Green", value: "#1B4332" },
+  { label: "Deep Navy", value: "#0D1B2A" },
+];
+
+const GRADIENTS = [
+  { label: "Soft Gray", value: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)" },
+  { label: "Warm Cream", value: "linear-gradient(135deg, #F5F5F0 0%, #E8E4DA 50%, #D4CFC4 100%)" },
+  { label: "Hampton Mist", value: "linear-gradient(135deg, #F5F5F0 0%, #E8F0E8 50%, #D6E5D6 100%)" },
+  { label: "Dusk", value: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" },
+  { label: "Midnight", value: "linear-gradient(135deg, #0c0c1d 0%, #1a1a3e 50%, #2d2d5e 100%)" },
+];
+
 function loadGoogleFont(font: string) {
   const id = `gfont-${font.replace(/\s/g, "-")}`;
   if (document.getElementById(id)) return;
@@ -48,91 +70,306 @@ function proxyPhotoUrl(url: string | null): string | null {
   return `/api/proxy/image?url=${encodeURIComponent(url)}`;
 }
 
-function LinkedInMockup({
+async function imageUrlToBase64(url: string): Promise<string | null> {
+  try {
+    const proxied = url.startsWith("/") ? url : `/api/proxy/image?url=${encodeURIComponent(url)}`;
+    const response = await fetch(proxied);
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+function formatContentWithLinks(text: string, linkColor: string) {
+  const parts = text.split(/(https?:\/\/[^\s]+|#\w+|@\w+)/g);
+  return parts.map((part, i) => {
+    if (part.match(/^https?:\/\//) || part.match(/^#\w+/) || part.match(/^@\w+/)) {
+      return <span key={i} style={{ color: linkColor }}>{part}</span>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+function VerifiedBadge() {
+  return (
+    <svg viewBox="0 0 22 22" width="18" height="18" style={{ flexShrink: 0 }}>
+      <path
+        d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.855-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.69-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.636.433 1.221.878 1.69.47.446 1.055.752 1.69.883.635.13 1.294.083 1.902-.143.271.586.702 1.084 1.24 1.438.54.354 1.167.551 1.813.568.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.225 1.261.276 1.894.147.634-.13 1.219-.435 1.69-.88.445-.47.75-1.055.88-1.69.13-.634.08-1.292-.148-1.898.584-.274 1.083-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z"
+        fill="#1D9BF0"
+      />
+    </svg>
+  );
+}
+
+function MockTwitterCard({
   content,
-  profilePhoto,
-  nodeRef,
-  bgColor,
+  profileBase64,
+  showMetrics,
 }: {
   content: string;
-  profilePhoto: string | null;
-  nodeRef: React.RefObject<HTMLDivElement | null>;
-  bgColor: string;
+  profileBase64: string | null;
+  showMetrics: boolean;
 }) {
-  const paragraphs = content.split("\n").filter((l) => l.trim());
-  const proxiedPhoto = proxyPhotoUrl(profilePhoto);
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  const dateStr = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+  const randomLikes = 1247 + Math.floor(Math.random() * 100);
+  const randomReposts = 312 + Math.floor(Math.random() * 50);
+  const randomBookmarks = 89 + Math.floor(Math.random() * 30);
+  const randomViews = "45.2K";
+
   return (
-    <div ref={nodeRef} style={{ backgroundColor: bgColor, padding: "40px" }}>
-      <div className="bg-white border border-[#D9D9D9]" style={{ borderRadius: "8px", overflow: "hidden", maxWidth: "500px", margin: "0 auto" }}>
-        <div className="flex items-center gap-3 p-4 pb-3">
-          {proxiedPhoto ? (
-            <img src={proxiedPhoto} alt="" className="w-12 h-12 rounded-full object-cover" />
+    <div
+      style={{
+        backgroundColor: "#FFFFFF",
+        borderRadius: "16px",
+        boxShadow: "0 20px 40px -10px rgba(0,0,0,0.1)",
+        overflow: "hidden",
+        maxWidth: "500px",
+        width: "100%",
+        margin: "0 auto",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      }}
+    >
+      <div style={{ padding: "16px 16px 0 16px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+          {profileBase64 ? (
+            <img
+              src={profileBase64}
+              alt=""
+              style={{ width: "48px", height: "48px", borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+            />
           ) : (
-            <div className="w-12 h-12 bg-[#0A66C2] rounded-full flex items-center justify-center">
-              <User className="w-6 h-6 text-white" />
+            <div
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius: "50%",
+                backgroundColor: "#111827",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <User style={{ width: "24px", height: "24px", color: "white" }} />
             </div>
           )}
-          <div>
-            <p className="text-[14px] font-semibold text-[#000]">Sam Parr</p>
-            <p className="text-[12px] text-[#666]">Founder & CEO</p>
-            <p className="text-[11px] text-[#999]">1d · 🌐</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "#0F1419" }}>Sam Parr</span>
+              <VerifiedBadge />
+            </div>
+            <span style={{ fontSize: "15px", color: "#536471" }}>@thesamparr</span>
           </div>
+          <svg viewBox="0 0 24 24" width="20" height="20" style={{ color: "#0F1419", flexShrink: 0 }}>
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" fill="currentColor" />
+          </svg>
         </div>
-        <div className="px-4 pb-4">
-          {paragraphs.map((p, i) => (
-            <p key={i} className="text-[14px] leading-[1.5] text-[#000] mb-2 last:mb-0">{p}</p>
-          ))}
+        <div
+          style={{
+            marginTop: "12px",
+            fontSize: "15px",
+            lineHeight: "1.5",
+            color: "#0F1419",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {formatContentWithLinks(content, "#1DA1F2")}
         </div>
-        <div className="flex items-center justify-around px-4 py-3 border-t border-[#E8E8E8]">
-          <span className="text-[12px] text-[#666] font-medium">👍 Like</span>
-          <span className="text-[12px] text-[#666] font-medium">💬 Comment</span>
-          <span className="text-[12px] text-[#666] font-medium">🔄 Repost</span>
-          <span className="text-[12px] text-[#666] font-medium">📤 Send</span>
+        <div style={{ marginTop: "16px", fontSize: "15px", color: "#536471" }}>
+          {timeStr} · {dateStr}
         </div>
       </div>
+
+      {showMetrics && (
+        <>
+          <div
+            style={{
+              margin: "12px 16px 0",
+              padding: "12px 0",
+              borderTop: "1px solid #EFF3F4",
+              display: "flex",
+              gap: "20px",
+              fontSize: "14px",
+            }}
+          >
+            <span><strong style={{ color: "#0F1419" }}>{randomReposts.toLocaleString()}</strong> <span style={{ color: "#536471" }}>Reposts</span></span>
+            <span><strong style={{ color: "#0F1419" }}>{randomLikes.toLocaleString()}</strong> <span style={{ color: "#536471" }}>Likes</span></span>
+            <span><strong style={{ color: "#0F1419" }}>{randomBookmarks}</strong> <span style={{ color: "#536471" }}>Bookmarks</span></span>
+            <span><strong style={{ color: "#0F1419" }}>{randomViews}</strong> <span style={{ color: "#536471" }}>Views</span></span>
+          </div>
+          <div
+            style={{
+              padding: "12px 16px",
+              borderTop: "1px solid #EFF3F4",
+              display: "flex",
+              justifyContent: "space-around",
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="#536471"><path d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z" /></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="#536471"><path d="M4.5 3.88l4.432 4.14-1.364 1.46L5.5 7.55V16c0 1.1.896 2 2 2H13v2H7.5c-2.209 0-4-1.79-4-4V7.55L1.432 9.48.068 8.02 4.5 3.88zM16.5 6H11V4h5.5c2.209 0 4 1.79 4 4v8.45l2.068-1.93 1.364 1.46-4.432 4.14-4.432-4.14 1.364-1.46 2.068 1.93V8c0-1.1-.896-2-2-2z" /></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="#536471"><path d="M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.56-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z" /></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="#536471"><path d="M4 4.5C4 3.12 5.119 2 6.5 2h11C18.881 2 20 3.12 20 4.5v18.44l-8-5.71-8 5.71V4.5zM6.5 4c-.276 0-.5.22-.5.5v14.56l6-4.29 6 4.29V4.5c0-.28-.224-.5-.5-.5h-11z" /></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="#536471"><path d="M12 2.59l5.7 5.7-1.41 1.42L13 6.41V16h-2V6.41l-3.3 3.3-1.41-1.42L12 2.59zM21 15l-.02 3.51c0 1.38-1.12 2.49-2.5 2.49H5.5C4.11 21 3 19.88 3 18.5V15h2v3.5c0 .28.22.5.5.5h12.98c.28 0 .5-.22.5-.5L19 15h2z" /></svg>
+          </div>
+        </>
+      )}
+      {!showMetrics && <div style={{ height: "16px" }} />}
     </div>
   );
 }
 
-function XMockup({
+function MockLinkedInCard({
   content,
-  profilePhoto,
-  nodeRef,
-  bgColor,
+  profileBase64,
+  showMetrics,
 }: {
   content: string;
-  profilePhoto: string | null;
-  nodeRef: React.RefObject<HTMLDivElement | null>;
-  bgColor: string;
+  profileBase64: string | null;
+  showMetrics: boolean;
 }) {
-  const proxiedPhoto = proxyPhotoUrl(profilePhoto);
+  const paragraphs = content.split("\n");
+
+  const randomLikes = 847 + Math.floor(Math.random() * 200);
+  const randomComments = 42 + Math.floor(Math.random() * 30);
+  const randomReposts = 18 + Math.floor(Math.random() * 20);
+
   return (
-    <div ref={nodeRef} style={{ backgroundColor: bgColor, padding: "40px" }}>
-      <div className="bg-white border border-[#E1E8ED]" style={{ borderRadius: "16px", overflow: "hidden", maxWidth: "500px", margin: "0 auto" }}>
-        <div className="flex items-start gap-3 p-4">
-          {proxiedPhoto ? (
-            <img src={proxiedPhoto} alt="" className="w-12 h-12 rounded-full object-cover flex-shrink-0" />
+    <div
+      style={{
+        backgroundColor: "#FFFFFF",
+        borderRadius: "12px",
+        boxShadow: "0 20px 40px -10px rgba(0,0,0,0.1)",
+        overflow: "hidden",
+        maxWidth: "500px",
+        width: "100%",
+        margin: "0 auto",
+        fontFamily: "system-ui, 'Segoe UI', sans-serif",
+      }}
+    >
+      <div style={{ padding: "16px 16px 0 16px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+          {profileBase64 ? (
+            <img
+              src={profileBase64}
+              alt=""
+              style={{ width: "48px", height: "48px", borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+            />
           ) : (
-            <div className="w-12 h-12 bg-[#111827] rounded-full flex items-center justify-center flex-shrink-0">
-              <User className="w-6 h-6 text-white" />
+            <div
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius: "50%",
+                backgroundColor: "#0A66C2",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <User style={{ width: "24px", height: "24px", color: "white" }} />
             </div>
           )}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-[15px] font-bold text-[#0F1419]">Sam Parr</span>
-              <span className="text-[15px] text-[#536471]">@thesamparr</span>
-              <span className="text-[15px] text-[#536471]">· 1h</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ fontSize: "14px", fontWeight: 600, color: "#000000" }}>Sam Parr</span>
+              <span style={{ fontSize: "14px", color: "#00000099" }}>• 1st</span>
             </div>
-            <p className="text-[15px] leading-[1.4] text-[#0F1419] whitespace-pre-wrap">{content}</p>
-            <div className="flex items-center justify-between mt-4 text-[#536471] max-w-[360px]">
-              <span className="text-[13px]">💬 42</span>
-              <span className="text-[13px]">🔄 128</span>
-              <span className="text-[13px]">❤️ 1.2K</span>
-              <span className="text-[13px]">📊 45K</span>
-            </div>
+            <p style={{ fontSize: "12px", color: "#00000099", margin: "2px 0" }}>Founder & CEO · Building Hampton</p>
+            <p style={{ fontSize: "12px", color: "#00000099", display: "flex", alignItems: "center", gap: "4px" }}>
+              {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })} •{" "}
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="#00000099">
+                <path d="M8 1a7 7 0 107 7 7 7 0 00-7-7zM3 8a5 5 0 011.17-3.24l.3.35a1 1 0 01-.06 1.37l-.32.32A1 1 0 004 7.31v.38a1 1 0 00.29.7l.28.29a1 1 0 010 1.41l-.71.71A5 5 0 013 8zm5 5a4.98 4.98 0 01-2.57-.71l.5-.5A1 1 0 006 11.5h.5A1.5 1.5 0 008 10v-.5a.5.5 0 01.5-.5h.59a1 1 0 00.7-.29l.5-.5a1 1 0 000-1.42l-.5-.5A1 1 0 009.09 6H8a2 2 0 01-2-2v-.07A5 5 0 0113 8a5 5 0 01-5 5z" />
+              </svg>
+            </p>
           </div>
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="#666">
+            <circle cx="12" cy="5" r="2" />
+            <circle cx="12" cy="12" r="2" />
+            <circle cx="12" cy="19" r="2" />
+          </svg>
         </div>
       </div>
+
+      <div style={{ padding: "12px 16px", fontSize: "14px", lineHeight: "1.5", color: "#000000", whiteSpace: "pre-wrap" }}>
+        {paragraphs.map((p, i) => (
+          <span key={i}>
+            {i > 0 && "\n"}
+            {formatContentWithLinks(p, "#0A66C2")}
+          </span>
+        ))}
+      </div>
+
+      {showMetrics && (
+        <>
+          <div
+            style={{
+              padding: "0 16px 8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              fontSize: "12px",
+              color: "#00000099",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ display: "inline-flex", alignItems: "center" }}>
+                <svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="8" fill="#378FE9" /><path d="M11.2 5.6L7.2 10 5 8" stroke="white" strokeWidth="1.5" fill="none" /></svg>
+              </span>
+              <span style={{ display: "inline-flex", alignItems: "center", marginLeft: "-4px" }}>
+                <svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="8" fill="#E7483D" /><path d="M5 6.5C5 5.67 5.67 5 6.5 5S8 5.67 8 6.5C8 5.67 8.67 5 9.5 5S11 5.67 11 6.5C11 8.5 8 11 8 11S5 8.5 5 6.5Z" fill="white" /></svg>
+              </span>
+              <span style={{ marginLeft: "4px" }}>{randomLikes.toLocaleString()}</span>
+            </div>
+            <span>{randomComments} comments · {randomReposts} reposts</span>
+          </div>
+          <div
+            style={{
+              margin: "0 16px",
+              padding: "4px 0",
+              borderTop: "1px solid #E0E0E0",
+              display: "flex",
+              justifyContent: "space-around",
+            }}
+          >
+            {[
+              { label: "Like", icon: "M11.4 2.4C10.2 2 8.7 2.5 8 3.7 7.3 2.5 5.8 2 4.6 2.4 3 3 2.3 4.8 2.6 6.3c.5 2.3 3.6 5.1 5.4 6.2 1.8-1.1 4.9-3.9 5.4-6.2.3-1.5-.4-3.3-2-3.9z" },
+              { label: "Comment", icon: "M7 9h10l-1.7 5H8.7L7 9zm1-7v5h12V2H8z" },
+              { label: "Repost", icon: "M13.6 2L16 4.4 13.6 6.8V5H5v3H3V4c0-.6.4-1 1-1h9.6V2zM2.4 10L0 12.4 2.4 14.8V13.4h8.6v-3h2v4c0 .6-.4 1-1 1H2.4v1.4z" },
+              { label: "Send", icon: "M21 3L0 10l7.66 4.26L21 3zm-7.44 14.32L21 3 7.66 14.26l5.9 3.06z" },
+            ].map((action) => (
+              <button
+                key={action.label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "12px 8px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "#00000099",
+                  background: "none",
+                  border: "none",
+                  cursor: "default",
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="#00000099"><path d={action.icon} /></svg>
+                <span>{action.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {!showMetrics && <div style={{ height: "16px" }} />}
     </div>
   );
 }
@@ -296,12 +533,25 @@ export default function Preview() {
     setAssetAlign,
     mockupBgColor,
     setMockupBgColor,
+    mockupBgType,
+    setMockupBgType,
+    mockupGradient,
+    setMockupGradient,
+    mockupPadding,
+    setMockupPadding,
+    mockupAspectRatio,
+    setMockupAspectRatio,
+    mockupShowMetrics,
+    setMockupShowMetrics,
+    mockupProfileBase64,
+    setMockupProfileBase64,
   } = useHopperStore();
 
   const { toast } = useToast();
   const previewRef = useRef<HTMLDivElement>(null);
   const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+  const [lastConvertedPhoto, setLastConvertedPhoto] = useState<string | null>(null);
 
   useEffect(() => {
     loadGoogleFont(assetFont);
@@ -324,6 +574,21 @@ export default function Preview() {
       (activeTab === "twitter" && selectedPost.platform === "twitter"));
 
   const isAssetMode = activeTab === "quote" || activeTab === "instagram";
+
+  const effectivePhoto = profilePhoto || selectedPost?.profilePhoto || null;
+
+  useEffect(() => {
+    if (isSameToSame && effectivePhoto && effectivePhoto !== lastConvertedPhoto) {
+      setLastConvertedPhoto(effectivePhoto);
+      imageUrlToBase64(effectivePhoto).then((base64) => {
+        setMockupProfileBase64(base64);
+      });
+    } else if (!isSameToSame || !effectivePhoto) {
+      if (mockupProfileBase64) {
+        setMockupProfileBase64(null);
+      }
+    }
+  }, [isSameToSame, effectivePhoto, lastConvertedPhoto]);
 
   const platformLabels: Record<string, { icon: any; label: string }> = {
     linkedin: { icon: SiLinkedin, label: "LinkedIn" },
@@ -384,7 +649,11 @@ export default function Preview() {
         if (!node) return;
 
         if (isSameToSame) {
-          const dataUrl = await toPng(node, { pixelRatio: 2 });
+          const dataUrl = await toPng(node, {
+            pixelRatio: 3,
+            quality: 1.0,
+            skipFonts: false,
+          });
           const link = document.createElement("a");
           link.download = `${activeTab}-mockup.png`;
           link.href = dataUrl;
@@ -424,22 +693,189 @@ export default function Preview() {
 
   const showControls = isAssetMode || isSameToSame;
 
+  const canvasBg = mockupBgType === "gradient" ? mockupGradient : mockupBgColor;
+  const canvasPadding = PADDING_PREVIEW_MAP[mockupPadding];
+
+  const getAspectStyle = (): Record<string, string | number> => {
+    if (mockupAspectRatio === "1:1") return { aspectRatio: "1 / 1" };
+    if (mockupAspectRatio === "16:9") return { aspectRatio: "16 / 9" };
+    return {};
+  };
+
+  const renderMockupControls = () => (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-[10px] font-mono text-[#999] uppercase tracking-wider w-[50px]" data-testid="label-padding">Pad</label>
+        <div className="flex gap-1">
+          {(["sm", "md", "lg", "xl"] as const).map((p) => (
+            <button
+              key={p}
+              data-testid={`button-padding-${p}`}
+              onClick={() => setMockupPadding(p)}
+              className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
+                mockupPadding === p
+                  ? "bg-[#111827] text-white border-[#111827]"
+                  : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+              }`}
+              style={{ borderRadius: "3px" }}
+            >
+              {p.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-[10px] font-mono text-[#999] uppercase tracking-wider w-[50px]">BG</label>
+        <div className="flex gap-1">
+          <button
+            data-testid="button-bg-solid"
+            onClick={() => setMockupBgType("solid")}
+            className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
+              mockupBgType === "solid"
+                ? "bg-[#111827] text-white border-[#111827]"
+                : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+            }`}
+            style={{ borderRadius: "3px" }}
+          >
+            Solid
+          </button>
+          <button
+            data-testid="button-bg-gradient"
+            onClick={() => setMockupBgType("gradient")}
+            className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
+              mockupBgType === "gradient"
+                ? "bg-[#111827] text-white border-[#111827]"
+                : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+            }`}
+            style={{ borderRadius: "3px" }}
+          >
+            Gradient
+          </button>
+        </div>
+      </div>
+
+      {mockupBgType === "solid" && (
+        <div className="flex items-center gap-1.5 flex-wrap pl-[58px]">
+          {SOLID_COLORS.map((c) => (
+            <button
+              key={c.value}
+              data-testid={`button-solid-${c.value}`}
+              onClick={() => setMockupBgColor(c.value)}
+              title={c.label}
+              className={`w-7 h-7 border-2 transition-all ${
+                mockupBgColor === c.value ? "border-[#111827] scale-110" : "border-[#E5E5E5] hover:border-[#999]"
+              }`}
+              style={{ backgroundColor: c.value, borderRadius: "4px" }}
+            />
+          ))}
+          <input
+            data-testid="input-mockup-bg-custom"
+            type="color"
+            value={mockupBgColor}
+            onChange={(e) => setMockupBgColor(e.target.value)}
+            className="w-7 h-7 border border-[#E5E5E5] cursor-pointer bg-transparent"
+            style={{ borderRadius: "3px" }}
+          />
+        </div>
+      )}
+
+      {mockupBgType === "gradient" && (
+        <div className="flex items-center gap-1.5 flex-wrap pl-[58px]">
+          {GRADIENTS.map((g) => (
+            <button
+              key={g.label}
+              data-testid={`button-gradient-${g.label}`}
+              onClick={() => setMockupGradient(g.value)}
+              title={g.label}
+              className={`w-7 h-7 border-2 transition-all ${
+                mockupGradient === g.value ? "border-[#111827] scale-110" : "border-[#E5E5E5] hover:border-[#999]"
+              }`}
+              style={{ background: g.value, borderRadius: "4px" }}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-[10px] font-mono text-[#999] uppercase tracking-wider w-[50px]">Ratio</label>
+        <div className="flex gap-1">
+          {(["auto", "1:1", "16:9"] as const).map((r) => (
+            <button
+              key={r}
+              data-testid={`button-ratio-${r}`}
+              onClick={() => setMockupAspectRatio(r)}
+              className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
+                mockupAspectRatio === r
+                  ? "bg-[#111827] text-white border-[#111827]"
+                  : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+              }`}
+              style={{ borderRadius: "3px" }}
+            >
+              {r === "auto" ? "Auto" : r}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <label className="text-[10px] font-mono text-[#999] uppercase tracking-wider w-[50px]">Stats</label>
+        <button
+          data-testid="button-toggle-metrics"
+          onClick={() => setMockupShowMetrics(!mockupShowMetrics)}
+          className={`h-7 px-2.5 text-[11px] font-mono border transition-colors inline-flex items-center gap-1.5 ${
+            mockupShowMetrics
+              ? "bg-[#111827] text-white border-[#111827]"
+              : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+          }`}
+          style={{ borderRadius: "3px" }}
+        >
+          {mockupShowMetrics ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+          {mockupShowMetrics ? "Showing" : "Hidden"}
+        </button>
+      </div>
+    </div>
+  );
+
   const renderPreview = () => {
     if (!content) {
       return (
-        <div className="flex items-center justify-center h-32 text-[13px] text-[#999]">
+        <div className="flex items-center justify-center h-32 text-[13px] text-[#999]" data-testid="text-empty-preview">
           Generate a draft to see the preview
         </div>
       );
     }
 
     if (isSameToSame) {
-      if (activeTab === "linkedin") {
-        return <LinkedInMockup content={content} profilePhoto={profilePhoto} nodeRef={previewRef} bgColor={mockupBgColor} />;
-      }
-      if (activeTab === "twitter") {
-        return <XMockup content={content} profilePhoto={profilePhoto} nodeRef={previewRef} bgColor={mockupBgColor} />;
-      }
+      return (
+        <div
+          ref={previewRef}
+          data-testid="mockup-canvas"
+          style={{
+            background: canvasBg,
+            padding: `${canvasPadding}px`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            ...getAspectStyle(),
+          }}
+        >
+          {activeTab === "twitter" && (
+            <MockTwitterCard
+              content={content}
+              profileBase64={mockupProfileBase64}
+              showMetrics={mockupShowMetrics}
+            />
+          )}
+          {activeTab === "linkedin" && (
+            <MockLinkedInCard
+              content={content}
+              profileBase64={mockupProfileBase64}
+              showMetrics={mockupShowMetrics}
+            />
+          )}
+        </div>
+      );
     }
 
     if (activeTab === "quote") {
@@ -584,8 +1020,8 @@ export default function Preview() {
       <div className="flex items-center justify-between px-4 h-[49px] border-b border-[#E5E5E5]">
         <div className="flex items-center gap-2">
           <PlatformIcon className="w-3.5 h-3.5 text-[#666]" />
-          <h2 className="text-[13px] font-semibold text-[#111827] tracking-tight">
-            {label} Preview
+          <h2 className="text-[13px] font-semibold text-[#111827] tracking-tight" data-testid="text-preview-title">
+            {isSameToSame ? `${label} Mockup` : `${label} Preview`}
           </h2>
         </div>
         {content && (
@@ -614,24 +1050,11 @@ export default function Preview() {
       </div>
 
       {showControls && content && (
-        <div className="px-4 py-3 border-b border-[#E5E5E5] bg-white space-y-3">
-          {isSameToSame && (
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] font-mono text-[#999] uppercase tracking-wider w-[60px]">BG</label>
-              <input
-                data-testid="input-mockup-bg"
-                type="color"
-                value={mockupBgColor}
-                onChange={(e) => setMockupBgColor(e.target.value)}
-                className="w-7 h-7 border border-[#E5E5E5] cursor-pointer bg-transparent"
-                style={{ borderRadius: "3px" }}
-              />
-              <span className="text-[11px] font-mono text-[#999]">{mockupBgColor}</span>
-            </div>
-          )}
+        <div className="px-4 py-3 border-b border-[#E5E5E5] bg-white">
+          {isSameToSame && renderMockupControls()}
 
           {isAssetMode && (
-            <>
+            <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <label className="text-[10px] font-mono text-[#999] uppercase tracking-wider w-[60px]">BG</label>
                 <input
@@ -712,7 +1135,7 @@ export default function Preview() {
                   ))}
                 </div>
               </div>
-            </>
+            </div>
           )}
         </div>
       )}

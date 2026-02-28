@@ -18,7 +18,7 @@ A high-performance content repurposing tool that ingests live social media posts
 - AI micro-tools: Make Punchier, Hater Simulator, Shaan Puri toggle
 - Quote format tab for extracting standalone quotes
 - Asset Generation Engine (Column 3): html-to-image export, color pickers, font selector, dimension toggles (1080x1080/1350/1920), text alignment
-- Same-to-same mockup generator (X→X, LinkedIn→LinkedIn) with profile photo injection
+- Same-to-same mockup generator (X→X, LinkedIn→LinkedIn): high-fidelity MockTwitterCard/MockLinkedInCard with canvas wrapper, padding controls (sm/md/lg/xl), solid/gradient backgrounds, aspect ratio lock (auto/1:1/16:9), fake metrics toggle, verified badge, base64 profile photo (CORS fix), pixelRatio:3 export, URL/hashtag color formatting
 - IG Carousel ZIP download (multiple slides)
 - Copy Text with LinkedIn zero-width space formatting
 - Trash Graveyard (rejected drafts saved for review)

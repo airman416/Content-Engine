@@ -51,6 +51,18 @@ interface HopperState {
   setAssetAlign: (align: "left" | "center" | "right") => void;
   mockupBgColor: string;
   setMockupBgColor: (color: string) => void;
+  mockupBgType: "solid" | "gradient";
+  setMockupBgType: (type: "solid" | "gradient") => void;
+  mockupGradient: string;
+  setMockupGradient: (gradient: string) => void;
+  mockupPadding: "sm" | "md" | "lg" | "xl";
+  setMockupPadding: (padding: "sm" | "md" | "lg" | "xl") => void;
+  mockupAspectRatio: "auto" | "1:1" | "16:9";
+  setMockupAspectRatio: (ratio: "auto" | "1:1" | "16:9") => void;
+  mockupShowMetrics: boolean;
+  setMockupShowMetrics: (show: boolean) => void;
+  mockupProfileBase64: string | null;
+  setMockupProfileBase64: (base64: string | null) => void;
 }
 
 export const useHopperStore = create<HopperState>((set, get) => ({
@@ -124,4 +136,16 @@ export const useHopperStore = create<HopperState>((set, get) => ({
   setAssetAlign: (align) => set({ assetAlign: align }),
   mockupBgColor: "#F0EDE6",
   setMockupBgColor: (color) => set({ mockupBgColor: color }),
+  mockupBgType: "solid",
+  setMockupBgType: (type) => set({ mockupBgType: type }),
+  mockupGradient: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+  setMockupGradient: (gradient) => set({ mockupGradient: gradient }),
+  mockupPadding: "md",
+  setMockupPadding: (padding) => set({ mockupPadding: padding }),
+  mockupAspectRatio: "auto",
+  setMockupAspectRatio: (ratio) => set({ mockupAspectRatio: ratio }),
+  mockupShowMetrics: true,
+  setMockupShowMetrics: (show) => set({ mockupShowMetrics: show }),
+  mockupProfileBase64: null,
+  setMockupProfileBase64: (base64) => set({ mockupProfileBase64: base64 }),
 }));
