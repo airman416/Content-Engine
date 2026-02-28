@@ -1,0 +1,73 @@
+# PRD Addendum 2: API Docs, Asset Engine, and Output Formats
+
+This is a continuation of our previous PRD. Please update the current application state to reflect the following specific features, API documentation, and strict constraints.
+
+## 1. UI & Feature Corrections
+* **Keep UI Utilitarian:** DO NOT change the main website UI to the Hampton brand colors. The main dashboard must remain the original "Utilitarian Luxury" monochrome theme (Off-white, black text, crisp 1px borders, single accent color for buttons). 
+* **Keep the Newsletter Tab:** Do not remove the "Newsletter" tab in the Workshop column. It remains a valid output format for Claude to generate text for. We are simply not scraping newsletters as an input.
+* **Rename "Swipe File":** Change all references of "Swipe File" in the UI and database to "Trash".
+
+## 2. Live API Ingestion & Documentation
+Replace the mock data logic with live client-side fetches targeting the user's 10 most recent posts. Save the user's profile photo to global state (Zustand) for the asset generator. 
+
+Use the following exact API configurations for the client-side `fetch` calls:
+
+### A. X (Twitter) via Apify
+* **Actor:** `kaitoeasyapi/twitter-x-data-tweet-scraper-pay-per-result-cheapest`
+* **Endpoint:** `POST https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items?token=[YOUR_APIFY_TOKEN]`
+* **JSON Payload:**
+  ```json
+  {
+    "twitterHandles": ["thesamparr"],
+    "maxItems": 10
+  }
+B. Instagram via Apify
+Actor: apidojo/instagram-scraper
+
+Endpoint: POST https://api.apify.com/v2/acts/apidojo~instagram-scraper/run-sync-get-dataset-items?token=[YOUR_APIFY_TOKEN]
+
+JSON Payload:
+
+JSON
+{
+  "startUrls": ["[https://www.instagram.com/thesamparr/](https://www.instagram.com/thesamparr/)"],
+  "maxItems": 10
+}
+C. LinkedIn via LinkdAPI
+Endpoint: GET https://linkdapi.com/api/v1/profile/posts?urn=ACoAAAt8nxwBrEPNpBTNouIQJu8BAIje750mmC0
+
+Headers: {"Authorization": "Bearer [YOUR_LINKDAPI_KEY]"}
+
+Note: Limit the returned array to the 10 most recent posts.
+
+3. The Asset Generation Engine (Column 3)
+The third column (Preview) must house a robust "Asset Generation Engine" using html-to-image. The user must be able to visually tweak the preview and export it as an image or text.
+
+A. Omni-Export Actions
+Provide two distinct export buttons: "Copy Text" and "Download Image".
+
+Copy Text: Must inject invisible zero-width spaces (\u200B) on empty line breaks to bypass LinkedIn formatting destruction.
+
+Download Image: Triggers a native download of the styled html-to-image rendering. If it is an IG Carousel, slice the text into multiple slides and download them together in a ZIP file.
+
+B. "Same-to-Same" UI Mockup Generator
+When the user converts a post to its original format (e.g., X to X, or LinkedIn to LinkedIn), generate a pixel-perfect graphical mockup of that platform's native UI card.
+
+Inject the live profile photo fetched from the API into this native mockup.
+
+Wrap the native UI card in a padded background container. Provide a color picker to change this outer background color so it looks like a premium screenshot.
+
+C. Output Formats: "Quote" and "Carousel"
+Add a dedicated "Quote" format tab in the Workshop, alongside the Carousel format. For both Quotes and IG Carousels, apply the following styling controls in the third column:
+
+Hampton Brand Default: The default styling for these generated images MUST be the Hampton podcast brand. Background: Cream/Off-White (#F5F5F0). Text: British Racing Green (#1B4332).
+
+Dimensions Toggle: 1080x1080 (Square Quote), 1080x1350 (IG Portrait Carousel), and 1080x1920 (IG Story/Reels). The preview DOM node must strictly enforce these aspect ratios. The text must automatically scale, wrap, and center to fit the dimension perfectly.
+
+Font Selector: Add a dropdown integrating premium Google Fonts (e.g., Inter, Roboto, Playfair Display, Merriweather). Apply the selected font to the preview node.
+
+Text Alignment: Left, Center, and Right alignment toggles.
+
+Color Selection: Color pickers for both the background and the text, allowing the user to override the Hampton defaults if desired.
+
+Title Formatting: Allow the user to highlight text in the editor and click a "Bold" button to create distinct headers within the image.
