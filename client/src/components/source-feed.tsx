@@ -3,7 +3,8 @@ import type { SourcePost } from "@/lib/db";
 import { formatDistanceToNow } from "date-fns";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { SiLinkedin, SiX, SiInstagram } from "react-icons/si";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 const platformBrandIcons: Record<string, typeof SiLinkedin> = {
   twitter: SiX,
@@ -12,7 +13,7 @@ const platformBrandIcons: Record<string, typeof SiLinkedin> = {
 };
 
 const platformNames: Record<string, string> = {
-  twitter: "Twitter",
+  twitter: "X",
   linkedin: "LinkedIn",
   instagram: "Instagram",
 };
@@ -69,11 +70,136 @@ function PostCard({
   );
 }
 
-export default function SourceFeed({ onRefresh }: { onRefresh?: () => void }) {
-  const { sourcePosts, selectedPostIndex, setSelectedPostIndex, isFeedLoading, setActiveTab } =
+export default function SourceFeed({ onRefresh }: { onRefresh?: (platform?: "twitter" | "linkedin" | "instagram") => void }) {
+  const { sourcePosts, selectedPostIndex, setSelectedPostIndex, feedLoadingPlatforms, setActiveTab } =
     useHopperStore();
   
   const [expandedPlatforms, setExpandedPlatforms] = useState<Record<string, boolean>>({});
+  // null = cursor is on a post (selectedPostIndex), string = cursor is on that platform header
+  const [focusedPlatform, setFocusedPlatform] = useState<string | null>(null);
+
+  // Refs so hotkey callbacks always see latest values
+  const expandedRef = useRef(expandedPlatforms);
+  const postsRef = useRef(sourcePosts);
+  const indexRef = useRef(selectedPostIndex);
+  const focusedPlatformRef = useRef(focusedPlatform);
+  useEffect(() => { expandedRef.current = expandedPlatforms; }, [expandedPlatforms]);
+  useEffect(() => { postsRef.current = sourcePosts; }, [sourcePosts]);
+  useEffect(() => { indexRef.current = selectedPostIndex; }, [selectedPostIndex]);
+  useEffect(() => { focusedPlatformRef.current = focusedPlatform; }, [focusedPlatform]);
+
+  // Scroll focused platform header into view
+  useEffect(() => {
+    if (focusedPlatform === null) return;
+    const el = document.querySelector<HTMLElement>(`[data-platform-header="${focusedPlatform}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [focusedPlatform]);
+
+  // Scroll selected post into view
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>(`[data-testid="source-post-${selectedPostIndex}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [selectedPostIndex]);
+
+  const PLATFORMS = ["twitter", "linkedin", "instagram"];
+
+  const getGroup = (platform: string, allPosts: SourcePost[]) =>
+    allPosts.reduce<{ post: SourcePost; idx: number }[]>((acc, post, idx) => {
+      if (post.platform === platform) acc.push({ post, idx });
+      return acc;
+    }, []);
+
+  const hotkeyOpts = { preventDefault: true, enableOnFormTags: true } as const;
+
+  useHotkeys("down", () => {
+    const fp = focusedPlatformRef.current;
+    const posts = postsRef.current;
+    const currentIndex = indexRef.current;
+
+    if (fp !== null) {
+      // On a header — go to next platform header
+      const idx = PLATFORMS.indexOf(fp);
+      const next = PLATFORMS[idx + 1];
+      if (next) setFocusedPlatform(next);
+    } else {
+      const currentPost = posts[currentIndex];
+      if (!currentPost) {
+        // Nothing selected — land on first platform header
+        setFocusedPlatform(PLATFORMS[0]);
+        return;
+      }
+      // On a post — go to next post in same group, or next platform header
+      const group = getGroup(currentPost.platform, posts);
+      const posInGroup = group.findIndex(({ idx }) => idx === currentIndex);
+      if (posInGroup < group.length - 1) {
+        setSelectedPostIndex(group[posInGroup + 1].idx);
+      } else {
+        const pIdx = PLATFORMS.indexOf(currentPost.platform);
+        const next = PLATFORMS[pIdx + 1];
+        if (next) setFocusedPlatform(next);
+      }
+    }
+  }, hotkeyOpts);
+
+  useHotkeys("up", () => {
+    const fp = focusedPlatformRef.current;
+    const posts = postsRef.current;
+    const expanded = expandedRef.current;
+    const currentIndex = indexRef.current;
+
+    if (fp !== null) {
+      // On a header — go to previous platform header (or its last post if expanded)
+      const idx = PLATFORMS.indexOf(fp);
+      if (idx === 0) return;
+      const prev = PLATFORMS[idx - 1];
+      if (expanded[prev]) {
+        const group = getGroup(prev, posts);
+        if (group.length > 0) {
+          setFocusedPlatform(null);
+          setSelectedPostIndex(group[group.length - 1].idx);
+          return;
+        }
+      }
+      setFocusedPlatform(prev);
+    } else {
+      const currentPost = posts[currentIndex];
+      if (!currentPost) return;
+      // On a post — go to previous post in same group, or back to platform header
+      const group = getGroup(currentPost.platform, posts);
+      const posInGroup = group.findIndex(({ idx }) => idx === currentIndex);
+      if (posInGroup > 0) {
+        setSelectedPostIndex(group[posInGroup - 1].idx);
+      } else {
+        setFocusedPlatform(currentPost.platform);
+      }
+    }
+  }, hotkeyOpts);
+
+  useHotkeys("right", () => {
+    const fp = focusedPlatformRef.current;
+    if (fp === null) return;
+    // Expand and enter the group
+    setExpandedPlatforms((prev) => ({ ...prev, [fp]: true }));
+    const group = getGroup(fp, postsRef.current);
+    if (group.length > 0) {
+      setFocusedPlatform(null);
+      setSelectedPostIndex(group[0].idx);
+    }
+  }, hotkeyOpts);
+
+  useHotkeys("left", () => {
+    const fp = focusedPlatformRef.current;
+    const posts = postsRef.current;
+    const currentIndex = indexRef.current;
+    if (fp !== null) {
+      // On a header — collapse it
+      setExpandedPlatforms((prev) => ({ ...prev, [fp]: false }));
+    } else {
+      // On a post — go back to its platform header
+      const currentPlatform = posts[currentIndex]?.platform;
+      if (currentPlatform) setFocusedPlatform(currentPlatform);
+    }
+  }, hotkeyOpts);
 
   const groupedPosts = useMemo(() => {
     const groups: Record<string, { post: SourcePost; index: number }[]> = {};
@@ -86,25 +212,13 @@ export default function SourceFeed({ onRefresh }: { onRefresh?: () => void }) {
     return groups;
   }, [sourcePosts]);
 
-  // Auto-expand the platform of the selected post
-  useEffect(() => {
-    if (sourcePosts[selectedPostIndex]) {
-      const platform = sourcePosts[selectedPostIndex].platform;
-      setExpandedPlatforms(prev => ({
-        ...prev,
-        [platform]: true
-      }));
-    }
-  }, [selectedPostIndex, sourcePosts]);
-
   const togglePlatform = (platform: string) => {
+    setFocusedPlatform(null);
     setExpandedPlatforms((prev) => ({
       ...prev,
       [platform]: !prev[platform],
     }));
   };
-
-  const platforms = ["twitter", "linkedin", "instagram"];
 
   return (
     <div className="h-full flex flex-col bg-[#FAFAFA]">
@@ -113,77 +227,106 @@ export default function SourceFeed({ onRefresh }: { onRefresh?: () => void }) {
           <h2 className="text-[13px] font-semibold text-[#111827] tracking-tight">
             Source Feed
           </h2>
-          <button
-            onClick={onRefresh}
-            className="p-1 text-[#999] hover:text-[#111827] transition-colors ml-1"
-            title="Refresh feed (Shift+R)"
-            disabled={isFeedLoading}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isFeedLoading ? "animate-spin" : ""}`} />
-          </button>
         </div>
         <div className="flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-mono text-[#666] bg-[#F0F0F0] border border-[#E0E0E0] rounded-sm">
-            J
+          <kbd className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-mono text-[#666] bg-[#F0F0F0] border border-[#E0E0E0] rounded-sm" title="Navigate up">
+            ↑
           </kbd>
-          <kbd className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-mono text-[#666] bg-[#F0F0F0] border border-[#E0E0E0] rounded-sm">
-            K
+          <kbd className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-mono text-[#666] bg-[#F0F0F0] border border-[#E0E0E0] rounded-sm" title="Navigate down">
+            ↓
+          </kbd>
+          <kbd className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-mono text-[#666] bg-[#F0F0F0] border border-[#E0E0E0] rounded-sm" title="Expand group">
+            →
+          </kbd>
+          <kbd className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-mono text-[#666] bg-[#F0F0F0] border border-[#E0E0E0] rounded-sm" title="Collapse group">
+            ←
+          </kbd>
+          <kbd className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[10px] font-mono text-[#666] bg-[#F0F0F0] border border-[#E0E0E0] rounded-sm" title="Refresh feed">
+            ⇧R
           </kbd>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {sourcePosts.length === 0 && !isFeedLoading ? (
+        {sourcePosts.length === 0 && !Object.values(feedLoadingPlatforms).some(Boolean) ? (
           <div className="flex items-center justify-center h-32 text-[13px] text-[#999]">
             No posts loaded
           </div>
-        ) : sourcePosts.length === 0 && isFeedLoading ? (
-          <div className="flex flex-col items-center justify-center h-32 gap-2">
-            <Loader2 className="w-5 h-5 animate-spin text-[#999]" />
-            <span className="text-[13px] text-[#999]">Loading live feed...</span>
-          </div>
         ) : (
           <div className="space-y-2">
-            {platforms.map((platform) => {
+            {PLATFORMS.map((platform) => {
               const posts = groupedPosts[platform] || [];
-              if (posts.length === 0) return null;
+              const isLoading = (feedLoadingPlatforms[platform] ?? false) && posts.length === 0;
               
               const BrandIcon = platformBrandIcons[platform];
               const isExpanded = expandedPlatforms[platform];
+              const isHeaderFocused = focusedPlatform === platform;
 
               return (
                 <div key={platform} className="space-y-2">
-                  <button
-                    onClick={() => togglePlatform(platform)}
-                    className="flex items-center w-full gap-2 px-2 py-1.5 text-[12px] font-medium text-[#666] hover:text-[#111827] transition-colors group"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="w-3.5 h-3.5 text-[#999] group-hover:text-[#666]" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-[#999] group-hover:text-[#666]" />
-                    )}
-                    <BrandIcon className="w-3.5 h-3.5" />
-                    <span className="capitalize">{platformNames[platform] || platform}</span>
-                    <span className="text-[10px] text-[#999] bg-[#F0F0F0] px-1.5 py-0.5 rounded-full ml-auto">
-                      {posts.length}
-                    </span>
-                  </button>
+                  <div className="flex items-center justify-between group/header">
+                    <button
+                      data-platform-header={platform}
+                      onClick={() => togglePlatform(platform)}
+                      className={`flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium transition-colors flex-1 rounded-sm ${
+                        isHeaderFocused
+                          ? "bg-[#111827] text-white"
+                          : "text-[#666] hover:text-[#111827]"
+                      }`}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : isExpanded ? (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      )}
+                      <BrandIcon className="w-3.5 h-3.5" />
+                      <span className="capitalize">{platformNames[platform] || platform}</span>
+                      {isLoading ? (
+                        <span className="text-[10px] ml-auto opacity-70">Loading…</span>
+                      ) : (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ml-auto ${
+                          isHeaderFocused ? "bg-white/20 text-white" : "bg-[#F0F0F0] text-[#999]"
+                        }`}>
+                          {posts.length}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRefresh?.(platform as "twitter" | "linkedin" | "instagram");
+                      }}
+                      className="p-1.5 text-[#999] hover:text-[#111827] transition-colors mr-1"
+                      title={`Refresh ${platformNames[platform]}`}
+                      disabled={feedLoadingPlatforms[platform] ?? false}
+                    >
+                      <RefreshCw className={`w-3 h-3 ${feedLoadingPlatforms[platform] ? "animate-spin" : ""}`} />
+                    </button>
+                  </div>
                   
-                  {isExpanded && (
+                  {isExpanded && !isLoading && (
                     <div className="space-y-2 pl-2 border-l border-[#E5E5E5] ml-3.5">
-                      {posts.map(({ post, index }) => (
-                        <PostCard
-                          key={post.id || index}
-                          post={post}
-                          index={index}
-                          isActive={index === selectedPostIndex}
-                          onClick={() => {
-                            setSelectedPostIndex(index);
-                            if (post.platform === "twitter") setActiveTab("twitter");
-                            else if (post.platform === "linkedin") setActiveTab("linkedin");
-                            else if (post.platform === "instagram") setActiveTab("instagram");
-                          }}
-                        />
-                      ))}
+                      {posts.length === 0 ? (
+                        <p className="text-[11px] text-[#999] px-2 py-1">No posts loaded</p>
+                      ) : (
+                        posts.map(({ post, index }) => (
+                          <PostCard
+                            key={post.id || index}
+                            post={post}
+                            index={index}
+                            isActive={index === selectedPostIndex}
+                            onClick={() => {
+                              setFocusedPlatform(null);
+                              setSelectedPostIndex(index);
+                              if (post.platform === "twitter") setActiveTab("twitter");
+                              else if (post.platform === "linkedin") setActiveTab("linkedin");
+                              else if (post.platform === "instagram") setActiveTab("instagram");
+                            }}
+                          />
+                        ))
+                      )}
                     </div>
                   )}
                 </div>

@@ -24,12 +24,12 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-const TABS: { key: PlatformTab; label: string }[] = [
-  { key: "linkedin", label: "LinkedIn" },
-  { key: "twitter", label: "Twitter/X" },
-  { key: "instagram", label: "IG Carousel" },
-  { key: "newsletter", label: "Newsletter" },
-  { key: "quote", label: "Quote" },
+const TABS: { key: PlatformTab; label: string; shortcut: string }[] = [
+  { key: "linkedin", label: "LinkedIn", shortcut: "L" },
+  { key: "twitter", label: "X", shortcut: "X" },
+  { key: "instagram", label: "IG Carousel", shortcut: "I" },
+  { key: "newsletter", label: "Newsletter", shortcut: "N" },
+  { key: "quote", label: "Quote", shortcut: "Q" },
 ];
 
 export default function Workshop() {
@@ -237,7 +237,7 @@ export default function Workshop() {
       if (soundEnabled) playExportSound();
       toast({
         title: "Copied to clipboard",
-        description: "Ready to paste into Twitter/X.",
+        description: "Ready to paste into X.",
       });
     } else if (activeTab === "instagram") {
       await navigator.clipboard.writeText(content);
@@ -273,19 +273,26 @@ export default function Workshop() {
   return (
     <div className="h-full flex flex-col bg-white">
       <div className="flex items-center justify-between h-[49px] border-b border-[#E5E5E5] px-1">
-        <div className="flex items-center h-full">
+        <div className="flex items-center h-full overflow-x-auto no-scrollbar flex-1 min-w-0 mr-2 group">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               data-testid={`tab-${tab.key}`}
               onClick={() => setActiveTab(tab.key)}
-              className={`h-full px-4 text-[13px] font-medium border-b-2 transition-colors ${
+              className={`h-full px-4 text-[13px] font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 inline-flex items-center gap-1.5 ${
                 activeTab === tab.key
                   ? "border-[#111827] text-[#111827]"
                   : "border-transparent text-[#999] hover:text-[#666]"
               }`}
             >
               {tab.label}
+              <kbd className={`text-[9px] font-mono px-1 py-0.5 border rounded-sm transition-colors ${
+                activeTab === tab.key
+                  ? "text-[#111827] bg-[#F5F5F5] border-[#E5E5E5]"
+                  : "text-[#CCC] bg-[#FAFAFA] border-[#EBEBEB]"
+              }`}>
+                {tab.shortcut}
+              </kbd>
             </button>
           ))}
         </div>
@@ -304,6 +311,9 @@ export default function Workshop() {
                 <Sparkles className="w-3 h-3" />
               )}
               Generate
+              <kbd className="ml-1 text-[9px] font-mono text-white/70 bg-white/20 px-1 py-0.5 border border-white/20 rounded-sm">
+                G
+              </kbd>
             </button>
           )}
           {activeDraft && (
@@ -313,6 +323,7 @@ export default function Workshop() {
               disabled={isAiLoading}
               className="inline-flex items-center gap-1.5 h-7 px-2 text-[12px] font-medium text-[#666] bg-white border border-[#E5E5E5] transition-colors disabled:opacity-50 hover-elevate"
               style={{ borderRadius: "3px" }}
+              title="Regenerate (G)"
             >
               <RefreshCw className="w-3 h-3" />
             </button>

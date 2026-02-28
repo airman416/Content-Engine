@@ -94,7 +94,7 @@ function LinkedInMockup({
   );
 }
 
-function TwitterMockup({
+function XMockup({
   content,
   profilePhoto,
   nodeRef,
@@ -327,7 +327,7 @@ export default function Preview() {
 
   const platformLabels: Record<string, { icon: any; label: string }> = {
     linkedin: { icon: SiLinkedin, label: "LinkedIn" },
-    twitter: { icon: SiX, label: "Twitter/X" },
+    twitter: { icon: SiX, label: "X" },
     instagram: { icon: SiInstagram, label: "Instagram" },
     newsletter: { icon: Mail, label: "Newsletter" },
     quote: { icon: Quote, label: "Quote" },
@@ -438,7 +438,7 @@ export default function Preview() {
         return <LinkedInMockup content={content} profilePhoto={profilePhoto} nodeRef={previewRef} bgColor={mockupBgColor} />;
       }
       if (activeTab === "twitter") {
-        return <TwitterMockup content={content} profilePhoto={profilePhoto} nodeRef={previewRef} bgColor={mockupBgColor} />;
+        return <XMockup content={content} profilePhoto={profilePhoto} nodeRef={previewRef} bgColor={mockupBgColor} />;
       }
     }
 

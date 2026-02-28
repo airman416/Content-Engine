@@ -36,8 +36,8 @@ interface HopperState {
   profilePhoto: string | null;
   setProfilePhoto: (url: string | null) => void;
 
-  isFeedLoading: boolean;
-  setFeedLoading: (loading: boolean) => void;
+  feedLoadingPlatforms: Record<string, boolean>;
+  setPlatformLoading: (platform: "twitter" | "linkedin" | "instagram" | null, loading: boolean) => void;
 
   assetBgColor: string;
   setAssetBgColor: (color: string) => void;
@@ -103,8 +103,14 @@ export const useHopperStore = create<HopperState>((set, get) => ({
   profilePhoto: null,
   setProfilePhoto: (url) => set({ profilePhoto: url }),
 
-  isFeedLoading: false,
-  setFeedLoading: (loading) => set({ isFeedLoading: loading }),
+  feedLoadingPlatforms: {},
+  setPlatformLoading: (platform, loading) => {
+    if (platform === null) {
+      set({ feedLoadingPlatforms: { twitter: loading, linkedin: loading, instagram: loading } });
+    } else {
+      set((s) => ({ feedLoadingPlatforms: { ...s.feedLoadingPlatforms, [platform]: loading } }));
+    }
+  },
 
   assetBgColor: "#F5F5F0",
   setAssetBgColor: (color) => set({ assetBgColor: color }),

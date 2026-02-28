@@ -64,106 +64,118 @@ class HopperDB extends Dexie {
 
 export const db = new HopperDB();
 
-export async function loadLiveFeed(): Promise<{
+export async function loadLiveFeed(platform?: "twitter" | "linkedin" | "instagram"): Promise<{
   posts: SourcePost[];
   profilePhoto: string | null;
 }> {
   const allPosts: SourcePost[] = [];
   let profilePhoto: string | null = null;
 
-  try {
-    const twitterRes = await fetch("/api/feed/twitter");
-    if (twitterRes.ok) {
-      const tweets = await twitterRes.json();
-      if (Array.isArray(tweets)) {
-        for (const tweet of tweets.slice(0, 10)) {
-          const text = tweet.full_text || tweet.text || tweet.tweet_text || "";
-          if (!text) continue;
-          if (!profilePhoto && (tweet.author_profile_image_url || tweet.profile_image_url || tweet.user?.profile_image_url_https)) {
-            profilePhoto = tweet.author_profile_image_url || tweet.profile_image_url || tweet.user?.profile_image_url_https;
+  if (!platform || platform === "twitter") {
+    try {
+      const twitterRes = await fetch("/api/feed/twitter");
+      if (twitterRes.ok) {
+        const tweets = await twitterRes.json();
+        if (Array.isArray(tweets)) {
+          for (const tweet of tweets.slice(0, 10)) {
+            const text = tweet.text || tweet.full_text || tweet.tweet_text || "";
+            if (!text) continue;
+            const photo = tweet.author?.profilePicture || tweet.author_profile_image_url || tweet.profile_image_url || tweet.user?.profile_image_url_https;
+            if (!profilePhoto && photo) {
+              profilePhoto = photo;
+            }
+            allPosts.push({
+              platform: "twitter",
+              content: text,
+              author: tweet.author?.name || tweet.author_name || tweet.user?.name || "Sam Parr",
+              authorHandle: tweet.author?.userName || tweet.author_username || tweet.user?.screen_name || "thesamparr",
+              profilePhoto: photo || undefined,
+              timestamp: tweet.createdAt || tweet.created_at || new Date().toISOString(),
+              url: tweet.url || tweet.twitterUrl || tweet.tweet_url || undefined,
+              metrics: {
+                likes: tweet.likeCount ?? tweet.favorite_count ?? tweet.likes ?? 0,
+                comments: tweet.replyCount ?? tweet.reply_count ?? tweet.replies ?? 0,
+                shares: tweet.retweetCount ?? tweet.retweet_count ?? tweet.retweets ?? 0,
+              },
+            });
           }
+        }
+      }
+    } catch (e) {
+      console.error("Twitter feed error:", e);
+    }
+  }
+
+  if (!platform || platform === "linkedin") {
+    try {
+      const linkedinRes = await fetch("/api/feed/linkedin");
+      if (linkedinRes.ok) {
+        const data = await linkedinRes.json();
+        // Response shape: { success, data: { cursor, posts: [...] } }
+        const posts = Array.isArray(data) ? data : (data.data?.posts || data.posts || []);
+        for (const post of posts) {
+          const text = post.text || post.commentary || post.content || "";
+          if (!text) continue;
+          const photo = post.author?.profilePictureURL || post.authorProfilePicture;
+          if (!profilePhoto && photo) {
+            profilePhoto = photo;
+          }
+          const ts = post.postedAt?.timestamp
+            ? new Date(post.postedAt.timestamp).toISOString()
+            : post.postedDate || post.created_at || new Date().toISOString();
           allPosts.push({
-            platform: "twitter",
+            platform: "linkedin",
             content: text,
-            author: tweet.author_name || tweet.user?.name || "Sam Parr",
-            authorHandle: tweet.author_username || tweet.user?.screen_name || "thesamparr",
-            profilePhoto: tweet.author_profile_image_url || tweet.profile_image_url || tweet.user?.profile_image_url_https || undefined,
-            timestamp: tweet.created_at || new Date().toISOString(),
-            url: tweet.tweet_url || tweet.url || undefined,
+            author: post.author?.name || post.authorName || "Sam Parr",
+            authorHandle: post.author?.headline || post.authorHeadline || "",
+            profilePhoto: photo || undefined,
+            timestamp: ts,
+            url: post.url || post.postUrl || undefined,
             metrics: {
-              likes: tweet.favorite_count || tweet.likes || 0,
-              comments: tweet.reply_count || tweet.replies || 0,
-              shares: tweet.retweet_count || tweet.retweets || 0,
+              likes: post.engagements?.totalReactions ?? post.numLikes ?? post.likes ?? 0,
+              comments: post.engagements?.commentsCount ?? post.numComments ?? post.comments ?? 0,
+              shares: post.engagements?.repostsCount ?? post.numShares ?? post.shares ?? 0,
             },
           });
         }
       }
+    } catch (e) {
+      console.error("LinkedIn feed error:", e);
     }
-  } catch (e) {
-    console.error("Twitter feed error:", e);
   }
 
-  try {
-    const linkedinRes = await fetch("/api/feed/linkedin");
-    if (linkedinRes.ok) {
-      const data = await linkedinRes.json();
-      const posts = Array.isArray(data) ? data : data.posts || data.data || [];
-      for (const post of posts.slice(0, 10)) {
-        const text = post.text || post.commentary || post.content || "";
-        if (!text) continue;
-        if (!profilePhoto && post.authorProfilePicture) {
-          profilePhoto = post.authorProfilePicture;
-        }
-        allPosts.push({
-          platform: "linkedin",
-          content: text,
-          author: post.authorName || post.author?.name || "Sam Parr",
-          authorHandle: post.authorHeadline || "",
-          profilePhoto: post.authorProfilePicture || undefined,
-          timestamp: post.postedDate || post.created_at || new Date().toISOString(),
-          url: post.postUrl || post.url || undefined,
-          metrics: {
-            likes: post.numLikes || post.likes || 0,
-            comments: post.numComments || post.comments || 0,
-            shares: post.numShares || post.shares || 0,
-          },
-        });
-      }
-    }
-  } catch (e) {
-    console.error("LinkedIn feed error:", e);
-  }
-
-  try {
-    const igRes = await fetch("/api/feed/instagram");
-    if (igRes.ok) {
-      const igPosts = await igRes.json();
-      if (Array.isArray(igPosts)) {
-        for (const post of igPosts.slice(0, 10)) {
-          const text = post.caption || post.text || "";
-          if (!text) continue;
-          if (!profilePhoto && post.ownerProfilePicUrl) {
-            profilePhoto = post.ownerProfilePicUrl;
+  if (!platform || platform === "instagram") {
+    try {
+      const igRes = await fetch("/api/feed/instagram");
+      if (igRes.ok) {
+        const igPosts = await igRes.json();
+        if (Array.isArray(igPosts)) {
+          for (const post of igPosts.slice(0, 10)) {
+            const text = post.caption || post.text || "";
+            if (!text) continue;
+            if (!profilePhoto && post.ownerProfilePicUrl) {
+              profilePhoto = post.ownerProfilePicUrl;
+            }
+            allPosts.push({
+              platform: "instagram",
+              content: text,
+              author: post.ownerFullName || post.ownerUsername || "Sam Parr",
+              authorHandle: post.ownerUsername || "thesamparr",
+              profilePhoto: post.ownerProfilePicUrl || undefined,
+              timestamp: post.timestamp || new Date().toISOString(),
+              url: post.url || undefined,
+              metrics: {
+                likes: post.likesCount || 0,
+                comments: post.commentsCount || 0,
+                shares: 0,
+              },
+            });
           }
-          allPosts.push({
-            platform: "instagram",
-            content: text,
-            author: post.ownerFullName || post.ownerUsername || "Sam Parr",
-            authorHandle: post.ownerUsername || "thesamparr",
-            profilePhoto: post.ownerProfilePicUrl || undefined,
-            timestamp: post.timestamp || new Date().toISOString(),
-            url: post.url || undefined,
-            metrics: {
-              likes: post.likesCount || 0,
-              comments: post.commentsCount || 0,
-              shares: 0,
-            },
-          });
         }
       }
+    } catch (e) {
+      console.error("Instagram feed error:", e);
     }
-  } catch (e) {
-    console.error("Instagram feed error:", e);
   }
 
   allPosts.sort(
@@ -173,9 +185,16 @@ export async function loadLiveFeed(): Promise<{
   return { posts: allPosts, profilePhoto };
 }
 
-export async function seedMockData() {
-  const count = await db.sourcePosts.count();
-  if (count > 0) return;
+export async function seedMockData(platforms?: Array<"twitter" | "linkedin" | "instagram">) {
+  const targetPlatforms = platforms ?? ["twitter", "linkedin", "instagram"];
+  const existingByPlatform = await Promise.all(
+    targetPlatforms.map(async (p) => ({
+      platform: p,
+      count: await db.sourcePosts.where("platform").equals(p).count(),
+    }))
+  );
+  const platformsToSeed = existingByPlatform.filter((e) => e.count === 0).map((e) => e.platform);
+  if (platformsToSeed.length === 0) return;
 
   const now = new Date();
   const posts: SourcePost[] = [
@@ -229,5 +248,6 @@ export async function seedMockData() {
     },
   ];
 
-  await db.sourcePosts.bulkAdd(posts);
+  const postsToSeed = posts.filter((p) => platformsToSeed.includes(p.platform));
+  await db.sourcePosts.bulkAdd(postsToSeed);
 }

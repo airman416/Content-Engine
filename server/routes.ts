@@ -70,13 +70,19 @@ export async function registerRoutes(
       if (!token) return res.status(500).json({ error: "APIFY_API_KEY not set" });
 
       const response = await fetch(
-        `https://api.apify.com/v2/acts/apidojo~instagram-scraper/run-sync-get-dataset-items?token=${token}`,
+        `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${token}&timeout=60&memory=512`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(75_000),
           body: JSON.stringify({
-            startUrls: ["https://www.instagram.com/thesamparr/"],
-            maxItems: 10,
+            addParentData: false,
+            directUrls: ["https://www.instagram.com/thesamparr"],
+            onlyPostsNewerThan: "2026-01-01",
+            resultsLimit: 10,
+            resultsType: "posts",
+            searchLimit: 1,
+            searchType: "hashtag",
           }),
         },
       );
@@ -100,10 +106,12 @@ export async function registerRoutes(
       const token = process.env.LINKEDAPI_API_KEY;
       if (!token) return res.status(500).json({ error: "LINKEDAPI_API_KEY not set" });
 
+      const SAM_PARR_URN = "ACoAAAt8nxwBrEPNpBTNouIQJu8BAIje750mmC0";
+
       const response = await fetch(
-        "https://linkdapi.com/api/v1/profile/posts?urn=ACoAAAt8nxwBrEPNpBTNouIQJu8BAIje750mmC0",
+        `https://linkdapi.com/api/v1/posts/all?urn=${SAM_PARR_URN}&start=0`,
         {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { "X-linkdapi-apikey": `li-${token}` },
         },
       );
 
@@ -114,7 +122,16 @@ export async function registerRoutes(
       }
 
       const data = await response.json();
-      res.json(data);
+      const allPosts: any[] = data?.data?.posts ?? [];
+      const top10 = allPosts
+        .filter(
+          (p) =>
+            p.author?.urn === SAM_PARR_URN &&
+            p.resharedPostContent == null,
+        )
+        .sort((a, b) => (b.postedAt?.timestamp ?? 0) - (a.postedAt?.timestamp ?? 0))
+        .slice(0, 10);
+      res.json({ ...data, data: { ...data.data, posts: top10 } });
     } catch (error: any) {
       console.error("LinkedIn feed error:", error);
       res.status(500).json({ error: error.message });

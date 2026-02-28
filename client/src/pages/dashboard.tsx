@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useHopperStore } from "@/lib/store";
-import { db, seedMockData, loadLiveFeed } from "@/lib/db";
+import { useHopperStore, type PlatformTab } from "@/lib/store";
+import { db, seedMockData, loadLiveFeed, type Draft } from "@/lib/db";
 import SourceFeed from "@/components/source-feed";
 import Workshop from "@/components/workshop";
 import Preview from "@/components/preview";
@@ -15,7 +15,6 @@ export default function Dashboard() {
   const {
     setSourcePosts,
     setDrafts,
-    moveSelection,
     sourcePosts,
     selectedPostIndex,
     drafts,
@@ -26,61 +25,10 @@ export default function Dashboard() {
     setAiLoading,
     isAiLoading,
     setProfilePhoto,
-    setFeedLoading,
+    setPlatformLoading,
   } = useHopperStore();
 
   const { toast } = useToast();
-
-  const refreshFeed = useCallback(async () => {
-    setFeedLoading(true);
-
-    try {
-      const { posts: livePosts, profilePhoto } = await loadLiveFeed();
-
-      if (livePosts.length > 0) {
-        const existingPosts = await db.sourcePosts.toArray();
-        const existingContentSet = new Set(existingPosts.map((p) => p.content.slice(0, 100)));
-
-        const newPosts = livePosts.filter(
-          (p) => !existingContentSet.has(p.content.slice(0, 100)),
-        );
-
-        if (newPosts.length > 0) {
-          await db.sourcePosts.bulkAdd(newPosts);
-        }
-
-        if (profilePhoto) {
-          setProfilePhoto(profilePhoto);
-        }
-      }
-
-      const existingCount = await db.sourcePosts.count();
-      if (existingCount === 0) {
-        await seedMockData();
-      }
-    } catch (e) {
-      console.error("Live feed failed, using mock data:", e);
-      const existingCount = await db.sourcePosts.count();
-      if (existingCount === 0) {
-        await seedMockData();
-      }
-    }
-
-    const posts = await db.sourcePosts
-      .orderBy("timestamp")
-      .reverse()
-      .toArray();
-    setSourcePosts(posts);
-    const allDrafts = await db.drafts.toArray();
-    setDrafts(allDrafts);
-    setFeedLoading(false);
-  }, [setFeedLoading, setProfilePhoto, setSourcePosts, setDrafts]);
-
-  useEffect(() => {
-    refreshFeed();
-  }, [refreshFeed]);
-
-  useHotkeys("shift+r", refreshFeed, { preventDefault: true });
 
   const selectedPost = sourcePosts[selectedPostIndex];
   const activeDraft = drafts.find(
@@ -96,8 +44,124 @@ export default function Dashboard() {
       d.status === "approved",
   );
 
-  useHotkeys("j", () => moveSelection("down"), { preventDefault: true });
-  useHotkeys("k", () => moveSelection("up"), { preventDefault: true });
+  const TABS: PlatformTab[] = ["linkedin", "twitter", "instagram", "newsletter", "quote"];
+
+
+  useHotkeys("l", () => useHopperStore.getState().setActiveTab("linkedin"), { preventDefault: true });
+  useHotkeys("x", () => useHopperStore.getState().setActiveTab("twitter"), { preventDefault: true });
+  useHotkeys("i", () => useHopperStore.getState().setActiveTab("instagram"), { preventDefault: true });
+  useHotkeys("n", () => useHopperStore.getState().setActiveTab("newsletter"), { preventDefault: true });
+  useHotkeys("q", () => useHopperStore.getState().setActiveTab("quote"), { preventDefault: true });
+
+  useHotkeys(
+    "g",
+    async () => {
+      if (!selectedPost || isAiLoading) return;
+      setAiLoading(true);
+
+      try {
+        const res = await apiRequest("POST", "/api/ai/generate", {
+          content: activeDraft?.content || selectedPost.content,
+          platform: activeTab,
+          sourceContent: selectedPost.content,
+        });
+        const data = await res.json();
+
+        const newDraft: Draft = {
+          sourcePostId: selectedPost.id!,
+          platform: activeTab,
+          content: data.content,
+          status: "draft",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        if (activeDraft?.id) {
+          await db.drafts.update(activeDraft.id, {
+            content: data.content,
+            updatedAt: new Date().toISOString(),
+          });
+          useHopperStore.getState().updateDraft(activeDraft.id, data.content);
+        } else {
+          const id = await db.drafts.add(newDraft);
+          const allDrafts = await db.drafts.toArray();
+          setDrafts(allDrafts);
+        }
+      } catch (error: any) {
+        toast({
+          title: "Generation failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      } finally {
+        setAiLoading(false);
+      }
+    },
+    { preventDefault: true, enabled: !isAiLoading && !!selectedPost },
+    [selectedPost, activeTab, activeDraft, isAiLoading],
+  );
+
+  // On mount: load from cache only — no API calls
+  const loadFromCache = useCallback(async () => {
+    // Seed mock data only for platforms with zero posts (first-run experience)
+    await seedMockData();
+    const posts = await db.sourcePosts.orderBy("timestamp").reverse().toArray();
+    setSourcePosts(posts);
+    const allDrafts = await db.drafts.toArray();
+    setDrafts(allDrafts);
+  }, [setSourcePosts, setDrafts]);
+
+  useEffect(() => {
+    loadFromCache();
+  }, [loadFromCache]);
+
+  // Explicit refresh: hits the API for the given platform (or all), dedupes, and saves to DB
+  const refreshFeed = useCallback(async (platform?: "twitter" | "linkedin" | "instagram") => {
+    setPlatformLoading(platform ?? null, true);
+
+    try {
+      const { posts: livePosts, profilePhoto } = await loadLiveFeed(platform);
+
+      if (livePosts.length > 0) {
+        if (platform) {
+          // Replace all posts for this platform so stale posts are evicted
+          await db.sourcePosts.where("platform").equals(platform).delete();
+          await db.sourcePosts.bulkAdd(livePosts);
+        } else {
+          const existingPosts = await db.sourcePosts.toArray();
+          const existingContentSet = new Set(existingPosts.map((p) => p.content.slice(0, 100)));
+          const newPosts = livePosts.filter(
+            (p) => !existingContentSet.has(p.content.slice(0, 100)),
+          );
+          if (newPosts.length > 0) {
+            await db.sourcePosts.bulkAdd(newPosts);
+          }
+        }
+
+        if (profilePhoto) {
+          setProfilePhoto(profilePhoto);
+        }
+      }
+
+      // Seed mock data for any platform that still has no posts
+      await seedMockData(platform ? [platform] : ["twitter", "linkedin", "instagram"]);
+    } catch (e) {
+      console.error("Live feed failed, using mock data:", e);
+      await seedMockData(platform ? [platform] : ["twitter", "linkedin", "instagram"]);
+    }
+
+    const posts = await db.sourcePosts
+      .orderBy("timestamp")
+      .reverse()
+      .toArray();
+    setSourcePosts(posts);
+    const allDrafts = await db.drafts.toArray();
+    setDrafts(allDrafts);
+    setPlatformLoading(platform ?? null, false);
+  }, [setPlatformLoading, setProfilePhoto, setSourcePosts, setDrafts]);
+
+  useHotkeys("shift+r", refreshFeed, { preventDefault: true });
+
 
   useHotkeys(
     "a",
