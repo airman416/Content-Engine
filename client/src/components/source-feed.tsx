@@ -18,6 +18,12 @@ const platformNames: Record<string, string> = {
   instagram: "Instagram",
 };
 
+const platformDefaultPhotos: Record<string, string> = {
+  twitter: "/x-profile.jpg",
+  linkedin: "/linkedin-profile.jpeg",
+  instagram: "/ig-profile.jpg",
+};
+
 function PostCard({
   post,
   index,
@@ -44,15 +50,18 @@ function PostCard({
     >
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-1.5">
-          {post.profilePhoto ? (
-            <img
-              src={post.profilePhoto.startsWith("/") ? post.profilePhoto : `/api/proxy/image?url=${encodeURIComponent(post.profilePhoto)}`}
-              alt={post.author}
-              className="w-4 h-4 rounded-full object-cover flex-shrink-0"
-            />
-          ) : (
-            <BrandIcon className="w-3 h-3 text-[#666]" />
-          )}
+          {(() => {
+            const photo = post.profilePhoto || platformDefaultPhotos[post.platform] || null;
+            return photo ? (
+              <img
+                src={photo.startsWith("/") ? photo : `/api/proxy/image?url=${encodeURIComponent(photo)}`}
+                alt={post.author}
+                className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+              />
+            ) : (
+              <BrandIcon className="w-3 h-3 text-[#666]" />
+            );
+          })()}
           <span className="text-[11px] font-mono text-[#666] uppercase tracking-wider">
             {post.platform}
           </span>

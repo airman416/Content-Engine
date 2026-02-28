@@ -228,7 +228,7 @@ function MockTwitterCard({
     <div
       style={{
         backgroundColor: "#FFFFFF",
-        borderRadius: "16px",
+        borderRadius: 0,
         boxShadow: "0 20px 40px -10px rgba(0,0,0,0.1)",
         overflow: "hidden",
         width: "100%",
@@ -392,7 +392,7 @@ function MockLinkedInCard({
     <div
       style={{
         backgroundColor: "#FFFFFF",
-        borderRadius: "12px",
+        borderRadius: 0,
         boxShadow: "0 20px 40px -10px rgba(0,0,0,0.1)",
         overflow: "hidden",
         width: "100%",
@@ -757,31 +757,28 @@ export default function Preview() {
 
   const content = activeDraft?.content || "";
 
-  const isSameToSame =
-    selectedPost &&
-    activeDraft &&
-    ((activeTab === "linkedin" && selectedPost.platform === "linkedin") ||
-      (activeTab === "twitter" && selectedPost.platform === "twitter"));
+  // Show platform mockup whenever exporting to LinkedIn or X, regardless of source (consistency)
+  const showMockup = (activeTab === "linkedin" || activeTab === "twitter") && !!content;
 
   const isAssetMode = activeTab === "quote" || activeTab === "instagram";
 
-  // For same-to-same mockups, use ONLY the selected post's author photo so the mockup matches the source (no cross-platform fallback)
-  const effectivePhoto = isSameToSame
-    ? (selectedPost?.profilePhoto ?? null)
+  // For mockups: prefer source post photo, fall back to profile photo
+  const effectivePhoto = showMockup
+    ? (selectedPost?.profilePhoto || profilePhoto || null)
     : (selectedPost?.profilePhoto || profilePhoto || null);
 
   useEffect(() => {
-    if (isSameToSame && effectivePhoto && effectivePhoto !== lastConvertedPhoto) {
+    if (showMockup && effectivePhoto && effectivePhoto !== lastConvertedPhoto) {
       setLastConvertedPhoto(effectivePhoto);
       imageUrlToBase64(effectivePhoto).then((base64) => {
         setMockupProfileBase64(base64);
       });
-    } else if (!isSameToSame || !effectivePhoto) {
+    } else if (!showMockup || !effectivePhoto) {
       if (mockupProfileBase64) {
         setMockupProfileBase64(null);
       }
     }
-  }, [isSameToSame, effectivePhoto, lastConvertedPhoto]);
+  }, [showMockup, effectivePhoto, lastConvertedPhoto]);
 
   const platformLabels: Record<string, { icon: any; label: string }> = {
     linkedin: { icon: SiLinkedin, label: "LinkedIn" },
@@ -854,7 +851,7 @@ export default function Preview() {
           link.download = getExportFilename("instagram-preview", "png");
           link.href = dataUrl;
           link.click();
-        } else if (isSameToSame) {
+        } else if (showMockup) {
           // Canvas has a fixed pixel width (CANVAS_W), so pixelRatio: 3 always
           // produces a consistent 1560px-wide output regardless of screen size.
           const exportOpts: Parameters<typeof toPng>[1] = { pixelRatio: 3, quality: 1.0 };
@@ -901,14 +898,14 @@ export default function Preview() {
     } finally {
       setIsExporting(false);
     }
-  }, [content, activeTab, isSameToSame, isAssetMode, assetDimension, assetFont, assetBgColor, assetTextColor, assetAlign, isExporting, selectedPost?.mediaUrls]);
+  }, [content, activeTab, showMockup, isAssetMode, assetDimension, assetFont, assetBgColor, assetTextColor, assetAlign, isExporting, selectedPost?.mediaUrls]);
 
   useEffect(() => {
     setTriggerExport(handleDownloadImage);
     return () => setTriggerExport(null);
   }, [handleDownloadImage, setTriggerExport]);
 
-  const showControls = isAssetMode || isSameToSame;
+  const showControls = isAssetMode || showMockup;
 
   const canvasBg = mockupBgType === "gradient" ? mockupGradient : mockupBgColor;
   const canvasPadding = PADDING_PREVIEW_MAP[mockupPadding];
@@ -1074,7 +1071,7 @@ export default function Preview() {
       );
     }
 
-    if (isSameToSame) {
+    if (showMockup) {
       return (
         <div style={{ display: "flex", justifyContent: "center" }}>
         <div
@@ -1137,7 +1134,7 @@ export default function Preview() {
       const authorName = selectedPost?.author ?? "Sam Parr";
       const authorHandle = selectedPost?.authorHandle ?? "thesamparr";
       return (
-        <div ref={previewRef} className="space-y-3">
+        <div ref={previewRef} className="bg-white border border-[#E5E5E5] p-4 space-y-3" style={{ borderRadius: "3px" }}>
           <div className="flex items-center gap-3 pb-2">
             {instagramPhotoUrl ? (
               <img
@@ -1214,77 +1211,6 @@ export default function Preview() {
       );
     }
 
-    if (activeTab === "linkedin") {
-      const paragraphs = content.split("\n").filter((l) => l.trim());
-      const proxiedPhoto = proxyPhotoUrl(selectedPost?.profilePhoto || profilePhoto || null);
-      return (
-        <div ref={previewRef} className="bg-white border border-[#E5E5E5] p-0" style={{ borderRadius: "3px" }}>
-          <div className="flex items-center gap-3 p-4 pb-3">
-            {proxiedPhoto ? (
-              <img src={proxiedPhoto} alt="" className="w-10 h-10 rounded-full object-cover" />
-            ) : (
-              <div className="w-10 h-10 bg-[#111827] rounded-full flex items-center justify-center">
-                <User className="w-5 h-5 text-white" />
-              </div>
-            )}
-            <div>
-              <p className="text-[14px] font-semibold text-[#111827]">Sam Parr</p>
-              <p className="text-[12px] text-[#666]">Founder of Hampton</p>
-            </div>
-          </div>
-          <div className="px-4 pb-4">
-            {paragraphs.map((p, i) => (
-              <p key={i} className="text-[14px] leading-[1.6] text-[#111827] mb-2 last:mb-0">{p}</p>
-            ))}
-          </div>
-          <div className="flex items-center gap-6 px-4 py-3 border-t border-[#F0F0F0]">
-            <span className="text-[12px] text-[#666]">Like</span>
-            <span className="text-[12px] text-[#666]">Comment</span>
-            <span className="text-[12px] text-[#666]">Repost</span>
-            <span className="text-[12px] text-[#666]">Send</span>
-          </div>
-        </div>
-      );
-    }
-
-    if (activeTab === "twitter") {
-      const charCount = content.length;
-      const isOverLimit = charCount > 280;
-      const proxiedPhoto = proxyPhotoUrl(effectivePhoto);
-      return (
-        <div ref={previewRef} className="bg-white border border-[#E5E5E5] p-0" style={{ borderRadius: "3px" }}>
-          <div className="flex items-start gap-3 p-4">
-            {proxiedPhoto ? (
-              <img src={proxiedPhoto} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-            ) : (
-              <div className="w-10 h-10 bg-[#111827] rounded-full flex items-center justify-center flex-shrink-0">
-                <User className="w-5 h-5 text-white" />
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[14px] font-bold text-[#111827]">Sam Parr</span>
-                <span className="text-[14px] text-[#666]">@thesamparr</span>
-                <span className="text-[14px] text-[#666]">· now</span>
-              </div>
-              <p className="text-[15px] leading-[1.5] text-[#111827] whitespace-pre-wrap">{content}</p>
-              <div className="flex items-center gap-10 mt-3 text-[#666]">
-                <span className="text-[13px]">Reply</span>
-                <span className="text-[13px]">Repost</span>
-                <span className="text-[13px]">Like</span>
-                <span className="text-[13px]">Share</span>
-              </div>
-            </div>
-          </div>
-          <div className="px-4 py-2 border-t border-[#F0F0F0] flex items-center justify-end">
-            <span className={`text-[12px] font-mono ${isOverLimit ? "text-red-500" : "text-[#999]"}`}>
-              {charCount}/280
-            </span>
-          </div>
-        </div>
-      );
-    }
-
     if (activeTab === "newsletter") {
       const lines = content.split("\n");
       let subject = "";
@@ -1321,7 +1247,7 @@ export default function Preview() {
         <div className="flex items-center gap-2">
           <PlatformIcon className="w-3.5 h-3.5 text-[#666]" />
           <h2 className="text-[13px] font-semibold text-[#111827] tracking-tight" data-testid="text-preview-title">
-            {isSameToSame ? `${label} Mockup` : `${label} Preview`}
+            {showMockup ? `${label} Mockup` : `${label} Preview`}
           </h2>
         </div>
         {content && (
@@ -1356,7 +1282,7 @@ export default function Preview() {
 
       {showControls && content && (
         <div className="px-4 py-3 border-b border-[#E5E5E5] bg-white">
-          {isSameToSame && renderMockupControls()}
+          {showMockup && renderMockupControls()}
 
           {isAssetMode && (
             <div className="space-y-3">
