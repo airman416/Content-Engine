@@ -80,7 +80,7 @@ function setCachedFeed<T>(platform: string, data: T): void {
 
 async function netlifyFeedFetch<T>(
   endpoint: string,
-  headers: Record<string, string>
+  headers: Record<string, string> = {}
 ): Promise<T> {
   const res = await fetch(`/.netlify/functions/${endpoint}`, {
     method: "GET",
@@ -99,12 +99,11 @@ export async function fetchTwitterFeed(bypassCache = false): Promise<unknown[]> 
   const cached = !bypassCache && getCachedFeed<unknown[]>("twitter");
   if (cached) return cached.data;
 
+  const headers: Record<string, string> = {};
   const token = getApifyKey();
-  if (!token) throw new Error("APIFY_API_KEY not set. Add one in Settings.");
+  if (token) headers["x-apify-api-key"] = token;
 
-  const data = await netlifyFeedFetch<unknown[]>("feed-twitter", {
-    "x-apify-api-key": token,
-  });
+  const data = await netlifyFeedFetch<unknown[]>("feed-twitter", headers);
   setCachedFeed("twitter", data);
   return data;
 }
@@ -113,12 +112,7 @@ export async function fetchLinkedInFeed(bypassCache = false): Promise<{ data?: {
   const cached = !bypassCache && getCachedFeed<{ data?: { posts?: unknown[] }; posts?: unknown[] }>("linkedin");
   if (cached) return cached.data;
 
-  const token = getLinkedApiKey();
-  if (!token) throw new Error("LINKEDAPI_API_KEY not set. Add one in Settings.");
-
-  const data = await netlifyFeedFetch<{ data?: { posts?: unknown[] }; posts?: unknown[] }>("feed-linkedin", {
-    "x-linkedapi-api-key": token,
-  });
+  const data = await netlifyFeedFetch<{ data?: { posts?: unknown[] }; posts?: unknown[] }>("feed-linkedin", {});
   setCachedFeed("linkedin", data);
   return data;
 }
@@ -127,12 +121,11 @@ export async function fetchInstagramFeed(bypassCache = false): Promise<unknown[]
   const cached = !bypassCache && getCachedFeed<unknown[]>("instagram");
   if (cached) return cached.data;
 
+  const headers: Record<string, string> = {};
   const token = getApifyKey();
-  if (!token) throw new Error("APIFY_API_KEY not set. Add one in Settings.");
+  if (token) headers["x-apify-api-key"] = token;
 
-  const data = await netlifyFeedFetch<unknown[]>("feed-instagram", {
-    "x-apify-api-key": token,
-  });
+  const data = await netlifyFeedFetch<unknown[]>("feed-instagram", headers);
   setCachedFeed("instagram", data);
   return data;
 }
