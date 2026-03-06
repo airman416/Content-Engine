@@ -38,14 +38,15 @@ const handler: Handler = async (event) => {
     }
 
     try {
-        const { systemBlocks, userMessage } = JSON.parse(event.body || "{}");
+        const { systemBlocks, userMessage, model: modelId } = JSON.parse(event.body || "{}");
+        const model = modelId || "claude-sonnet-4-20250514";
 
         const anthropic = new Anthropic({ apiKey });
 
         // System blocks come pre-assembled from the client with cache_control
         // on the final static block, enabling Anthropic prompt caching.
         const message = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
+            model,
             max_tokens: 2048,
             system: systemBlocks,
             messages: [

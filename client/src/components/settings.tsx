@@ -7,6 +7,7 @@ import {
   getApifyKey,
   getLinkedApiKey,
 } from "@/lib/api";
+import { getOllamaUrl, setOllamaUrl } from "@/lib/agenticPipeline";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ export default function Settings() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apifyInput, setApifyInput] = useState("");
   const [linkedInput, setLinkedInput] = useState("");
+  const [ollamaInput, setOllamaInput] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const { toast } = useToast();
 
@@ -24,6 +26,7 @@ export default function Settings() {
     if (showSettings) {
       setHasKey(hasClaudeApiKey());
       setApiKeyInput("");
+      setOllamaInput(getOllamaUrl());
     }
   }, [showSettings]);
 
@@ -113,6 +116,34 @@ export default function Settings() {
               {getApifyKey() && (
                 <p className="text-[11px] text-green-600 mt-1">Configured</p>
               )}
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-[#666] block mb-1.5">
+                Ollama URL
+              </label>
+              <p className="text-[11px] text-[#999] mb-2">
+                Local Ollama instance for running models offline.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="http://localhost:11434"
+                  value={ollamaInput}
+                  onChange={(e) => setOllamaInput(e.target.value)}
+                  className="flex-1 font-mono text-[13px]"
+                />
+                <button
+                  onClick={() => {
+                    const val = ollamaInput.trim() || "http://localhost:11434";
+                    setOllamaUrl(val);
+                    toast({ title: "Ollama URL saved" });
+                  }}
+                  className="h-9 px-3 text-[11px] font-medium text-white bg-[#111827] hover:bg-[#1f2937] border border-[#111827]"
+                  style={{ borderRadius: "3px" }}
+                >
+                  Save
+                </button>
+              </div>
             </div>
             <div>
               <label className="text-[12px] font-medium text-[#666] block mb-1.5">

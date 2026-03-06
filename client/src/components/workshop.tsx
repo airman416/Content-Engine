@@ -302,15 +302,15 @@ export default function Workshop() {
                 data-testid={`tab-${tab.key}`}
                 onClick={() => setActiveTab(tab.key)}
                 className={`h-full px-4 text-[13px] font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 inline-flex items-center gap-1.5 ${activeTab === tab.key
-                    ? "border-[#111827] text-[#111827]"
-                    : "border-transparent text-[#999] hover:text-[#666]"
+                  ? "border-[#111827] text-[#111827]"
+                  : "border-transparent text-[#999] hover:text-[#666]"
                   }`}
               >
                 {tab.label}
                 <kbd
                   className={`text-[9px] font-mono px-1 py-0.5 border rounded-sm transition-colors ${activeTab === tab.key
-                      ? "text-[#111827] bg-[#F5F5F5] border-[#E5E5E5]"
-                      : "text-[#CCC] bg-[#FAFAFA] border-[#EBEBEB]"
+                    ? "text-[#111827] bg-[#F5F5F5] border-[#E5E5E5]"
+                    : "text-[#CCC] bg-[#FAFAFA] border-[#EBEBEB]"
                     }`}
                 >
                   {tab.shortcut}
@@ -371,10 +371,10 @@ export default function Workshop() {
 
           <div
             className={`inline-flex items-center gap-1.5 px-2 py-1 border text-[11px] font-mono ${vibeCheck.score >= 80
-                ? "bg-green-50 border-green-200"
-                : vibeCheck.score >= 50
-                  ? "bg-amber-50 border-amber-200"
-                  : "bg-red-50 border-red-200"
+              ? "bg-green-50 border-green-200"
+              : vibeCheck.score >= 50
+                ? "bg-amber-50 border-amber-200"
+                : "bg-red-50 border-red-200"
               }`}
             style={{ borderRadius: "3px" }}
             data-testid="badge-human-score"
@@ -384,10 +384,10 @@ export default function Workshop() {
             </span>
             <span
               className={`font-bold ${vibeCheck.score >= 80
-                  ? "text-green-700"
-                  : vibeCheck.score >= 50
-                    ? "text-amber-600"
-                    : "text-red-600"
+                ? "text-green-700"
+                : vibeCheck.score >= 50
+                  ? "text-amber-600"
+                  : "text-red-600"
                 }`}
             >
               {vibeCheck.score}%
@@ -550,8 +550,8 @@ export default function Workshop() {
               onClick={handleShaanRewrite}
               disabled={isAiLoading || !draftContent}
               className={`inline-flex items-center justify-center gap-1.5 w-24 h-7 px-3 text-[12px] font-medium border transition-colors disabled:opacity-40 ${shaanMode
-                  ? "text-[#FF4F00] bg-orange-50 border-orange-200"
-                  : "text-[#111827] bg-white border-[#E5E5E5] hover-elevate"
+                ? "text-[#FF4F00] bg-orange-50 border-orange-200"
+                : "text-[#111827] bg-white border-[#E5E5E5] hover-elevate"
                 }`}
               style={{ borderRadius: "3px" }}
             >

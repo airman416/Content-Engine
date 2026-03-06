@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useHopperStore, type PlatformTab } from "@/lib/store";
 import { db, loadLiveFeed, type Draft } from "@/lib/db";
@@ -17,8 +17,13 @@ import {
   Redo2,
   Settings as SettingsIcon,
   ChevronDown,
+  Cpu,
+  Check,
 } from "lucide-react";
 import { aiPunchier, aiHater, aiShaan, runGeneration } from "@/lib/api";
+import { fetchOllamaModels } from "@/lib/agenticPipeline";
+import type { ModelChoice } from "@/lib/agenticPipeline";
+import { AnimatePresence, motion } from "framer-motion";
 import { initOramaIndex } from "@/lib/oramaSearch";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -26,7 +31,6 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import type { ModelChoice } from "@/lib/agenticPipeline";
 
 export default function Dashboard() {
   const {
@@ -55,6 +59,35 @@ export default function Dashboard() {
   } = useHopperStore();
 
   const { toast } = useToast();
+
+  // ── Ollama model discovery ──
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchOllamaModels().then(setOllamaModels);
+  }, []);
+
+  useEffect(() => {
+    if (!modelMenuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+        setModelMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [modelMenuOpen]);
+
+  function getModelLabel(m: ModelChoice, short = false): string {
+    if (m === "claude") return "Claude";
+    if (m.startsWith("ollama:")) {
+      const modelName = m.slice("ollama:".length);
+      return short ? `Haiku + ${modelName}` : `Haiku + ${modelName}`;
+    }
+    return m;
+  }
 
   const selectedPost = sourcePosts[selectedPostIndex];
   const activeDraft = drafts.find(
@@ -424,11 +457,6 @@ export default function Dashboard() {
     [activeDraft, isAiLoading, pushHistory],
   );
 
-  const MODEL_OPTIONS: { value: ModelChoice; label: string }[] = [
-    { value: "claude", label: "Claude 3.5 Sonnet" },
-    { value: "sam-llama", label: "Sam-Llama-3 (Fine-tuned)" },
-  ];
-
   return (
     <div className="h-screen flex flex-col bg-[#FAFAFA]">
       <header className="flex items-center justify-between h-[49px] px-5 border-b border-[#E5E5E5] bg-white flex-shrink-0">
@@ -437,24 +465,66 @@ export default function Dashboard() {
             Content Engine
           </h1>
 
-          {/* Model Selector Dropdown */}
-          <div className="relative">
-            <select
-              data-testid="model-selector"
-              value={selectedModel}
-              onChange={(e) =>
-                setSelectedModel(e.target.value as ModelChoice)
-              }
-              className="appearance-none h-7 pl-2.5 pr-7 text-[11px] font-medium text-[#666] bg-[#FAFAFA] border border-[#E5E5E5] transition-colors hover:border-[#CCC] focus:outline-none focus:border-[#999] cursor-pointer"
+          {/* ── Model Selector ── */}
+          <div className="relative" ref={modelMenuRef}>
+            <button
+              data-testid="button-model-selector"
+              onClick={() => setModelMenuOpen((o) => !o)}
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 text-[11px] font-medium text-[#555] bg-[#FAFAFA] border border-[#E5E5E5] hover:bg-[#F0F0F0] transition-colors"
               style={{ borderRadius: "3px" }}
+              title="Select AI model"
             >
-              {MODEL_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#999] pointer-events-none" />
+              <Cpu className="w-3 h-3" />
+              <span className="max-w-[90px] truncate">{getModelLabel(selectedModel)}</span>
+              <ChevronDown className="w-2.5 h-2.5 opacity-50" />
+            </button>
+
+            <AnimatePresence>
+              {modelMenuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.97 }}
+                  transition={{ duration: 0.1 }}
+                  className="absolute left-0 top-8 z-50 bg-white border border-[#E5E5E5] min-w-[190px] py-1"
+                  style={{ borderRadius: "4px", boxShadow: "0 4px 16px rgba(0,0,0,0.1)" }}
+                >
+                  <p className="px-3 pt-1.5 pb-1 text-[9px] font-semibold uppercase tracking-wider text-[#BBB]">Cloud</p>
+                  <button
+                    onClick={() => { setSelectedModel("claude"); setModelMenuOpen(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2 transition-colors ${selectedModel === "claude"
+                      ? "bg-[#F5F5F5] text-[#111827] font-medium"
+                      : "text-[#444] hover:bg-[#FAFAFA]"
+                      }`}
+                  >
+                    {selectedModel === "claude" ? <Check className="w-3 h-3 text-[#111827]" /> : <span className="w-3" />}
+                    Claude
+                  </button>
+
+                  <div className="border-t border-[#F0F0F0] my-1" />
+                  <p className="px-3 pb-1 text-[9px] font-semibold uppercase tracking-wider text-[#BBB]">Haiku + Ollama (local)</p>
+                  {ollamaModels.length > 0 ? ollamaModels.map((m) => {
+                    const choice: ModelChoice = `ollama:${m}`;
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => { setSelectedModel(choice); setModelMenuOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2 transition-colors ${selectedModel === choice
+                          ? "bg-[#F5F5F5] text-[#111827] font-medium"
+                          : "text-[#444] hover:bg-[#FAFAFA]"
+                          }`}
+                      >
+                        {selectedModel === choice ? <Check className="w-3 h-3 text-[#111827]" /> : <span className="w-3" />}
+                        <span className="truncate flex-1">{m}</span>
+                        <span className="text-[9px] text-[#BBB] font-normal shrink-0">via Haiku</span>
+                      </button>
+                    );
+                  }) : (
+                    <p className="px-3 pb-2 text-[10px] text-[#BBB] italic">No models found — is Ollama running?</p>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
         <div className="flex items-center gap-2">

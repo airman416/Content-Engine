@@ -1,15 +1,42 @@
 /**
- * Single-step generation pipeline with conditional model routing.
+ * Generation pipeline with conditional model routing.
  *
- * - Claude 3.5 Sonnet: Full Syntax Rulebook + Voice Vault + RAG + Prompt Caching
- * - Sam-Llama-3:       Persona only + RAG → routed to Together AI
+ * - claude:           Full Syntax Rulebook + Voice Vault + RAG + Prompt Caching (Sonnet)
+ * - ollama:<model>:   Two-step pipeline:
+ *     Step 1 — Ollama (fine-tuned): generate raw content in Sam's voice
+ *     Step 2 — Claude Haiku:        enforce platform formatting structure
  */
 
 import { queryRag, type RagResult } from "./oramaSearch";
-import { buildClaudePrompt, buildLlamaPrompt } from "./promptBuilder";
+import { buildClaudePrompt, buildHaikuFormatterPrompt } from "./promptBuilder";
 import { getClaudeApiKey } from "./api";
 
-export type ModelChoice = "claude" | "sam-llama";
+export type ModelChoice = "claude" | `ollama:${string}`;
+
+const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+
+export function getOllamaUrl(): string {
+    return localStorage.getItem("ollama_url") || DEFAULT_OLLAMA_URL;
+}
+
+export function setOllamaUrl(url: string): void {
+    localStorage.setItem("ollama_url", url.trim().replace(/\/$/, ""));
+}
+
+/** Fetch available Ollama models from the local Ollama instance */
+export async function fetchOllamaModels(): Promise<string[]> {
+    const base = getOllamaUrl();
+    try {
+        const res = await fetch(`${base}/api/tags`, {
+            signal: AbortSignal.timeout(3000),
+        });
+        if (!res.ok) return [];
+        const data = (await res.json()) as { models?: Array<{ name: string }> };
+        return (data.models ?? []).map((m) => m.name);
+    } catch {
+        return [];
+    }
+}
 
 interface GenerationResult {
     /** The final drafted content */
@@ -19,22 +46,24 @@ interface GenerationResult {
 }
 
 /**
- * Run the single-step generation pipeline.
- * Routes to Claude or Together AI based on the selected model.
+ * Run the generation pipeline.
+ * - "claude" → full Claude Sonnet path (rulebook + vault + RAG)
+ * - "ollama:X" → Step 1: Ollama generates Sam-voiced raw content
+ *               Step 2: Claude Haiku enforces platform formatting
  */
 export async function runGeneration(
     sourceText: string,
     platform: string,
     model: ModelChoice,
 ): Promise<GenerationResult> {
-    // ── RAG Query ──
     const ragResults: RagResult[] = await queryRag(sourceText, 3);
     const contextPostIds = ragResults.map((r) => r.postId);
 
     if (model === "claude") {
         return generateWithClaude(sourceText, platform, ragResults, contextPostIds);
     } else {
-        return generateWithLlama(sourceText, platform, ragResults, contextPostIds);
+        const ollamaModel = model.startsWith("ollama:") ? model.slice("ollama:".length) : model;
+        return generateWithOllamaThenHaiku(sourceText, platform, ragResults, contextPostIds, ollamaModel);
     }
 }
 
@@ -76,31 +105,82 @@ async function generateWithClaude(
 }
 
 /**
- * Sam-Llama-3 path: Lightweight — persona + RAG only, no rulebook/vault.
- * Routed to Together AI endpoint.
+ * Ollama two-step pipeline:
+ *
+ * Step 1 — Ollama (fine-tuned local model)
+ *   Prompt: minimal. Just "be Sam Parr, write about this topic".
+ *   Output: raw content in Sam's authentic voice, no format constraints.
+ *
+ * Step 2 — Claude Haiku (claude-haiku-4-5-20251001)
+ *   Prompt: "take this Sam Parr content and reformat it for {platform}".
+ *   Output: correctly structured post (carousel slides, etc.).
  */
-async function generateWithLlama(
+async function generateWithOllamaThenHaiku(
     sourceText: string,
     platform: string,
     ragResults: RagResult[],
     contextPostIds: number[],
+    ollamaModel: string,
 ): Promise<GenerationResult> {
-    const prompt = buildLlamaPrompt(sourceText, platform, ragResults);
+    const apiKey = getClaudeApiKey();
+    if (!apiKey) {
+        throw new Error("Claude API key required for formatting. Add one in Settings.");
+    }
 
-    const res = await fetch("/.netlify/functions/ai-together", {
+    // ── Step 1: Ollama — voice generation ──
+    const base = getOllamaUrl();
+
+    // Give Ollama freedom to write in Sam's voice without format constraints.
+    // Haiku will handle structure in Step 2.
+    const voiceSystemPrompt = `You are ghostwriting as Sam Parr. Write in his exact voice: short, punchy, brutally honest, founder energy. No fluff. ABSOLUTELY NO EM DASHES (—).`;
+    const voiceUserMessage = `Write about this topic in Sam Parr's voice. Don't worry about formatting, just capture his authentic perspective. Do not use any em dashes (—).\n\nSource:\n${sourceText}`;
+
+    const ollamaRes = await fetch(`${base}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            systemPrompt: prompt.systemPrompt,
-            userMessage: prompt.userMessage,
+            model: ollamaModel,
+            messages: [
+                { role: "system", content: voiceSystemPrompt },
+                { role: "user", content: voiceUserMessage },
+            ],
+            stream: false,
         }),
     });
 
-    if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || `Sam-Llama generation failed: ${res.status}`);
+    if (!ollamaRes.ok) {
+        const err = (await ollamaRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Ollama generation failed: ${ollamaRes.status}`);
     }
 
-    const { content } = (await res.json()) as { content: string };
+    const ollamaData = (await ollamaRes.json()) as { message?: { content?: string } };
+    const samVoiceContent = ollamaData.message?.content ?? "";
+
+    if (!samVoiceContent.trim()) {
+        throw new Error("Ollama returned empty content.");
+    }
+
+    // ── Step 2: Claude Haiku — platform formatting ──
+    const haikuPrompt = buildHaikuFormatterPrompt(samVoiceContent, platform);
+
+    const haikuRes = await fetch("/.netlify/functions/ai-writer", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-claude-api-key": apiKey,
+        },
+        body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            systemBlocks: haikuPrompt.systemBlocks,
+            userMessage: haikuPrompt.userMessage,
+        }),
+    });
+
+    if (!haikuRes.ok) {
+        const err = (await haikuRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Haiku formatting failed: ${haikuRes.status}`);
+    }
+
+    const { content } = (await haikuRes.json()) as { content: string };
     return { content, contextPostIds };
 }

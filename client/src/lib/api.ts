@@ -180,5 +180,5 @@ export async function aiShaan(content: string): Promise<{ content: string }> {
 }
 
 // Re-export the generation pipeline for use in components
-export { runGeneration } from "./agenticPipeline";
+export { runGeneration, fetchOllamaModels, getOllamaUrl, setOllamaUrl } from "./agenticPipeline";
 export type { ModelChoice } from "./agenticPipeline";
