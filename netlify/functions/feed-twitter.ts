@@ -34,7 +34,7 @@ const TWITTER_BODY = {
   "include:nativeretweets": false,
   lang: "en",
   maxItems: 20,
-  queryType: "Top",
+  queryType: "Latest",
   twitterContent: "from:thesamparr since:2026-01-01 -filter:replies",
   min_retweets: 0,
   min_faves: 0,
@@ -73,10 +73,20 @@ const handler: Handler = async (event) => {
     }
 
     const data = await res.json();
+
+    // Sort newest-first using the Twitter date format: "Thu Feb 12 11:44:41 +0000 2026"
+    const sorted = Array.isArray(data)
+      ? [...data].sort((a, b) => {
+        const da = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const db = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return db - da;
+      })
+      : data;
+
     return {
       statusCode: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify(sorted),
     };
   } catch (error: unknown) {
     console.error("Twitter feed error:", error);
