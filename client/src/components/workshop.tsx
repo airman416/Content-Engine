@@ -9,6 +9,8 @@ import {
 } from "@/lib/readability";
 import { playRejectSound, playApproveSound } from "@/lib/sounds";
 import { aiPunchier, aiHater, aiShaan, runGeneration } from "@/lib/api";
+import { approveDraft, rejectDraft } from "@/lib/draftActions";
+import RejectReasonPopover from "@/components/reject-reason-popover";
 import { useToast } from "@/hooks/use-toast";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -52,6 +54,10 @@ export default function Workshop() {
     triggerExport,
     selectedModel,
     setLastContextPostIds,
+    lastContextPostIds,
+    pendingReject,
+    openRejectPopover,
+    closeRejectPopover,
   } = useHopperStore();
 
   const { toast } = useToast();
@@ -220,60 +226,74 @@ export default function Workshop() {
     }
   }, [draftContent, activeDraft, isAiLoading, pushHistory]);
 
-  // ── APPROVE — save to vault, no weight_score updates ──
+  // ── APPROVE — save to vault, increment weight_score on RAG context posts ──
   const handleApprove = useCallback(async () => {
     if (!activeDraft?.id) return;
     pushHistory();
 
-    const finalText = draftContent;
-
-    await db.approved_vault.add({
-      platform_format: activeTab,
-      final_text: finalText,
-      timestamp: new Date().toISOString(),
+    await approveDraft({
+      draftId: activeDraft.id,
+      sourcePostId: activeDraft.sourcePostId,
+      platform: activeTab,
+      finalText: draftContent,
+      contextPostIds: lastContextPostIds,
     });
 
-    await db.drafts.update(activeDraft.id, { status: "approved" });
     if (soundEnabled) playApproveSound();
     toast({ title: "Draft approved & saved to vault" });
     const allDrafts = await db.drafts.toArray();
     setDrafts(allDrafts);
-  }, [activeDraft, draftContent, activeTab, soundEnabled, pushHistory]);
+  }, [activeDraft, draftContent, activeTab, lastContextPostIds, soundEnabled, pushHistory]);
 
-  // ── REJECT — clear from UI, save raw text to rejected_vault ──
-  const handleReject = useCallback(async () => {
+  // ── REJECT — show reason popover, then save to rejected_vault & decrement weights ──
+  const handleReject = useCallback(() => {
     if (!activeDraft?.id) return;
     pushHistory();
-    setRejectedId(activeDraft.id);
-
-    // Save raw text to rejected_vault for future analytics
-    await db.rejected_vault.add({
-      rejected_text: draftContent,
-      reason: "rejected",
-      timestamp: new Date().toISOString(),
-    });
-
-    // Save to trash (existing behavior)
-    await db.trash.add({
-      draftId: activeDraft.id,
+    openRejectPopover({
+      id: activeDraft.id,
       sourcePostId: activeDraft.sourcePostId,
-      content: activeDraft.content,
+      content: draftContent,
       platform: activeDraft.platform,
-      rejectedAt: new Date().toISOString(),
-      originalContent:
-        sourcePosts.find((p) => p.id === activeDraft.sourcePostId)?.content ||
-        "",
     });
+  }, [activeDraft, draftContent, pushHistory, openRejectPopover]);
 
-    await db.drafts.update(activeDraft.id, { status: "rejected" });
-    if (soundEnabled) playRejectSound();
+  const handleRejectReasonSelect = useCallback(
+    async (reason: import("@/components/reject-reason-popover").RejectReason) => {
+      if (!pendingReject) return;
+      setRejectedId(pendingReject.draftId);
 
-    setTimeout(async () => {
-      setRejectedId(null);
-      const allDrafts = await db.drafts.toArray();
-      setDrafts(allDrafts);
-    }, 300);
-  }, [activeDraft, draftContent, soundEnabled, sourcePosts, pushHistory]);
+      const originalContent =
+        sourcePosts.find((p) => p.id === pendingReject.sourcePostId)?.content ||
+        "";
+
+      await rejectDraft({
+        draftId: pendingReject.draftId,
+        sourcePostId: pendingReject.sourcePostId,
+        content: pendingReject.content,
+        platform: pendingReject.platform,
+        reason,
+        originalContent,
+        contextPostIds: lastContextPostIds,
+      });
+
+      closeRejectPopover();
+      if (soundEnabled) playRejectSound();
+
+      setTimeout(async () => {
+        setRejectedId(null);
+        const allDrafts = await db.drafts.toArray();
+        setDrafts(allDrafts);
+      }, 300);
+    },
+    [
+      pendingReject,
+      sourcePosts,
+      lastContextPostIds,
+      soundEnabled,
+      closeRejectPopover,
+      setDrafts,
+    ],
+  );
 
   const handleContentChange = useCallback(
     (value: string) => {
@@ -590,18 +610,25 @@ export default function Workshop() {
                   </kbd>
                 </button>
 
-                <button
-                  data-testid="button-reject"
-                  onClick={handleReject}
-                  className="inline-flex items-center justify-center gap-1.5 w-24 h-7 px-3 text-[12px] font-medium text-[#999] bg-white border border-[#E5E5E5] transition-colors hover-elevate"
-                  style={{ borderRadius: "3px" }}
-                >
-                  <X className="w-3 h-3" />
-                  Reject
-                  <kbd className="ml-1 text-[9px] font-mono text-[#999] bg-[#F5F5F5] px-1 py-0.5 border border-[#E5E5E5] rounded-sm">
-                    R
-                  </kbd>
-                </button>
+                <div className="relative">
+                  <button
+                    data-testid="button-reject"
+                    onClick={handleReject}
+                    className="inline-flex items-center justify-center gap-1.5 w-24 h-7 px-3 text-[12px] font-medium text-[#999] bg-white border border-[#E5E5E5] transition-colors hover-elevate"
+                    style={{ borderRadius: "3px" }}
+                  >
+                    <X className="w-3 h-3" />
+                    Reject
+                    <kbd className="ml-1 text-[9px] font-mono text-[#999] bg-[#F5F5F5] px-1 py-0.5 border border-[#E5E5E5] rounded-sm">
+                      R
+                    </kbd>
+                  </button>
+                  <RejectReasonPopover
+                    isOpen={!!pendingReject}
+                    onSelect={handleRejectReasonSelect}
+                    onClose={closeRejectPopover}
+                  />
+                </div>
               </>
             )}
 

@@ -24,15 +24,22 @@ export interface ClaudePromptPayload {
     userMessage: string;
 }
 
+export interface ArchitectResult {
+    coreInsight: string;
+    framework: string;
+}
+
 /**
  * Build the full-complexity system prompt for Claude.
  * Includes Syntax Rulebook, Voice Vault, RAG results, Approved/Rejected vaults.
  * Static blocks get Anthropic prompt caching.
+ * If architectResult is provided (from Step 1), the Writer uses that framework.
  */
 export async function buildClaudePrompt(
     sourceText: string,
     platform: string,
     ragResults: RagResult[],
+    architectResult?: ArchitectResult,
 ): Promise<ClaudePromptPayload> {
     // ── Positive Examples ──
     let positiveExamples: string[] = [];
@@ -73,18 +80,31 @@ export async function buildClaudePrompt(
             allRejected[Math.floor(Math.random() * allRejected.length)];
         negativeBlock = `
 <negative_examples>
-The following draft was REJECTED. Avoid similar issues.
+The following draft was REJECTED. Reason: "${randomRejected.reason}". Strictly avoid this specific issue.
 
 ${randomRejected.rejected_text}
 </negative_examples>`;
     }
 
     // ── Voice Vault (Base Context) ──
-    const vaultSubset = VOICE_VAULT.slice(0, 10).join("\n\n---\n\n");
+    // Top 50 training examples by weight_score (PRD); fall back to static vault
+    const allHistorical = await db.historical_posts.toArray();
+    const topWeighted = allHistorical
+        .sort((a, b) => (b.weight_score ?? 1000) - (a.weight_score ?? 1000))
+        .slice(0, 50);
+
+    const vaultContent =
+        topWeighted.length > 0
+            ? topWeighted
+                  .filter((p) => p.output?.trim())
+                  .map((p) => p.output)
+                  .join("\n\n---\n\n")
+            : VOICE_VAULT.slice(0, 10).join("\n\n---\n\n");
+
     const voiceVaultBlock = `<voice_vault>
 These are Sam Parr's actual high-performing posts. Study their tone, rhythm, sentence structure, and formatting:
 
-${vaultSubset}
+${vaultContent}
 </voice_vault>`;
 
     // ── Assemble System Blocks (static blocks cached) ──
@@ -118,32 +138,54 @@ Analyze the syntactic structure and tone of the positive examples. Format your o
 
 Target platform: ${platform}
 
+${platform === "linkedin" ? `LINKEDIN RULES:
+- Professional but conversational. Short paragraphs with line breaks.
+- Punchy and value-driven. Hyperspecific numbers. No hashtags. No emojis.
+- One-sentence paragraphs. One-word hook when it fits.
+- Apply the Syntax Rulebook: slang, hyperspecificity, humble/arrogant contrast.` : ""}
+${platform === "twitter" ? `TWITTER/X RULES:
+- Under 280 characters if possible, or a tight thread-worthy post.
+- Match the formatting and tone of the positive examples. Sharp, direct. No hashtags. No emojis.
+- One-sentence paragraphs. One-word hook when it fits.
+- Apply the Syntax Rulebook: slang, hyperspecificity, humble/arrogant contrast.` : ""}
+${platform === "newsletter" ? `NEWSLETTER RULES:
+- Add depth and examples. Conversational, like writing to a smart friend.
+- Add a subject line prefixed with "Subject: ".
+- One-sentence paragraphs. One-word hook when it fits.
+- Apply the Syntax Rulebook: slang, hyperspecificity, humble/arrogant contrast.` : ""}
+${platform === "quote" ? `QUOTE RULES:
+- Extract the single most powerful quotable idea. One punchy standalone sentence under 30 words.
+- Apply the Syntax Rulebook: hyperspecificity, slang where natural.` : ""}
 ${platform === "instagram" ? `INSTAGRAM CAROUSEL FORMAT RULES:
 - Output ONLY the slide content. Do NOT write any intro like "Here is your carousel" or "Sure, here are the slides". Start directly with Slide 1 content.
 - Separate each slide with a line containing only: ---
 - Each slide MUST have two parts separated by a blank line:
-  HEADING: A short, punchy title (1 line, 3-8 words)
+  HEADING: Title Case (capitalize each major word). Short, punchy title (1 line, 3-8 words)
   (blank line)
-  BODY: 2-3 short sentences expanding on the heading
+  BODY: Sentence case. 2-3 short sentences expanding on the heading
 - Slide 1 = strong hook that makes people want to swipe
 - Last slide = clear CTA (follow, share, reply, etc.)
-- 5-7 slides total
+- 5-10 slides total (output as many as needed to cover the topic)
 
 Example of correct slide format:
-This is your hook heading
+Everyone Thinks Founders Read Business Books
 
-This is the first body sentence. This is the second body sentence.
+Scraped 1,000+ founders for 18 months. Turns out they're reading psychology and fiction instead.
 ---
-Slide Two Heading Here
+The Data Doesn't Lie
 
-Expand on slide two here. Keep it punchy and direct.` : ""}
+18 months of book recs from founders doing $3M-25M revenue. Only 1 pure business book made the list.` : ""}
 </instruction>`,
         },
     ];
 
+    const architectContext = architectResult
+        ? `\n\nFRAMEWORK (use this structure): ${architectResult.framework}\nCORE INSIGHT (the main idea to convey): ${architectResult.coreInsight}\n\n`
+        : "";
+
     const userMessage = platform === "instagram"
-        ? `Create an Instagram carousel based on the source text below. Output ONLY the slides in the exact format specified. No intro text, no remarks, no explanations. Start directly with the first slide heading. No em dashes (—).\n\nSource text:\n${sourceText}`
-        : `Write a ${platform} post based on the following source text. Return ONLY the final post text. No explanation. No preamble. No em dashes (—).\n\nSource text:\n${sourceText}`;
+        ? `Create an Instagram carousel based on the source text below.${architectContext}Output ONLY the slides in the exact format specified. No intro text, no remarks, no explanations. Start directly with the first slide heading. No em dashes (—).\n\nSource text:\n${sourceText}`
+        : `Write a ${platform} post based on the following source text.${architectContext}Return ONLY the final post text. No explanation. No preamble. No em dashes (—).\n\nSource text:\n${sourceText}`;
 
     return { systemBlocks, userMessage };
 }
@@ -165,7 +207,7 @@ const INSTAGRAM_FORMAT = `Format: Instagram carousel.
   1. HEADING: short punchy title (3-8 words)
   2. BODY: 2-3 short sentences expanding on it
 - Slide 1 = hook that makes people swipe. Last slide = CTA.
-- 5-7 slides total.
+- 5-10 slides total (output as many as needed, up to 10).
 
 Example:
 Your hook heading here
@@ -177,11 +219,11 @@ Next slide heading
 Expand here. Keep it punchy.`;
 
 const PLATFORM_INSTRUCTIONS: Record<string, string> = {
-    linkedin: `Rewrite this for LinkedIn. Professional but conversational. Short paragraphs with line breaks. Punchy and value-driven. No hashtags. No emojis. NO EM DASHES (—). Return ONLY the post text, no intro or remarks.`,
-    twitter: `Rewrite this for Twitter/X. Under 280 characters if possible, or a tight thread-worthy post. Sharp, direct, no hashtags, no emojis. NO EM DASHES (—). Return ONLY the tweet text, no intro.`,
+    linkedin: `Rewrite this for LinkedIn. Professional but conversational. One-sentence paragraphs. Punchy and value-driven. Hyperspecific numbers. No hashtags. No emojis. NO EM DASHES (—). Return ONLY the post text, no intro or remarks.`,
+    twitter: `Rewrite this for Twitter/X. Under 280 characters if possible, or a tight thread-worthy post. Match the formatting of the style examples. One-sentence paragraphs. Sharp, direct. No hashtags. No emojis. NO EM DASHES (—). Return ONLY the tweet text, no intro.`,
     instagram: INSTAGRAM_FORMAT,
-    newsletter: `Rewrite this as a newsletter section. Add depth and examples. Conversational, like writing to a smart friend. Add a subject line prefixed with "Subject: ". NO EM DASHES (—). Return ONLY the newsletter content, no intro remarks.`,
-    quote: `Extract the single most powerful quotable idea from this. One punchy standalone sentence under 30 words. NO EM DASHES (—). Return ONLY the quote, nothing else.`,
+    newsletter: `Rewrite this as a newsletter section. Add depth and examples. One-sentence paragraphs. Conversational, like writing to a smart friend. Add a subject line prefixed with "Subject: ". NO EM DASHES (—). Return ONLY the newsletter content, no intro remarks.`,
+    quote: `Extract the single most powerful quotable idea from this. One punchy standalone sentence under 30 words. Hyperspecific numbers where relevant. NO EM DASHES (—). Return ONLY the quote, nothing else.`,
 };
 
 /**

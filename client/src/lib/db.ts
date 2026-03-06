@@ -61,8 +61,17 @@ export interface RejectedVaultEntry {
   timestamp: string;
 }
 
+/** Training data from training_data.jsonl — instruction/output pairs for RAG */
+export interface HistoricalPost {
+  id?: number;
+  instruction: string;
+  output: string;
+  weight_score: number;
+}
+
 class HopperDB extends Dexie {
   sourcePosts!: Table<SourcePost>;
+  historical_posts!: Table<HistoricalPost>;
   drafts!: Table<Draft>;
   trash!: Table<TrashEntry>;
   approved_vault!: Table<ApprovedVaultEntry>;
@@ -116,7 +125,6 @@ class HopperDB extends Dexie {
       approved_vault: "++id, platform_format, timestamp",
       rejected_vault: "++id, timestamp",
     }).upgrade(async (tx) => {
-      // Set default weight_score of 1000 on all existing source posts
       const posts = await tx.table("sourcePosts").toArray();
       for (const post of posts) {
         if (post.weight_score === undefined) {
@@ -125,6 +133,16 @@ class HopperDB extends Dexie {
           });
         }
       }
+    });
+
+    // Version 5: Add Historical_Posts (training_data.jsonl) for RAG
+    this.version(5).stores({
+      sourcePosts: "++id, platform, timestamp",
+      historical_posts: "++id",
+      drafts: "++id, sourcePostId, platform, status, createdAt",
+      trash: "++id, draftId, sourcePostId, platform, rejectedAt",
+      approved_vault: "++id, platform_format, timestamp",
+      rejected_vault: "++id, timestamp",
     });
   }
 }
@@ -187,6 +205,7 @@ export async function loadLiveFeed(
                 views: tweet.viewCount ?? tweet.view_count ?? undefined,
               },
               mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
+              weight_score: 1000,
             });
         }
       }
@@ -228,6 +247,7 @@ export async function loadLiveFeed(
               shares: post.engagements?.repostsCount ?? post.numShares ?? post.shares ?? 0,
             },
             mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
+            weight_score: 1000,
           });
         }
     } catch (e) {
@@ -270,6 +290,7 @@ export async function loadLiveFeed(
                 comments: post.commentsCount || 0,
                 shares: 0,
               },
+              weight_score: 1000,
             });
         }
       }

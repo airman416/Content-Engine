@@ -8,7 +8,7 @@
  */
 
 import { queryRag, type RagResult } from "./oramaSearch";
-import { buildClaudePrompt, buildHaikuFormatterPrompt } from "./promptBuilder";
+import { buildClaudePrompt, buildHaikuFormatterPrompt, type ArchitectResult } from "./promptBuilder";
 import { getClaudeApiKey } from "./api";
 
 export type ModelChoice = "claude" | `ollama:${string}`;
@@ -68,7 +68,34 @@ export async function runGeneration(
 }
 
 /**
- * Claude path: Full complexity — Syntax Rulebook, Voice Vault, RAG, Prompt Caching
+ * Step 1 — Architect: Identify core insight and choose Sam Parr framework.
+ */
+async function runArchitect(sourceText: string): Promise<ArchitectResult> {
+    const apiKey = getClaudeApiKey();
+    if (!apiKey) {
+        throw new Error("Claude API key required. Add one in Settings.");
+    }
+
+    const res = await fetch("/.netlify/functions/ai-architect", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-claude-api-key": apiKey,
+        },
+        body: JSON.stringify({ sourceText }),
+    });
+
+    if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || `Architect step failed: ${res.status}`);
+    }
+
+    return res.json() as Promise<ArchitectResult>;
+}
+
+/**
+ * Claude path: Two-step pipeline — Architect → Writer.
+ * Full complexity: Syntax Rulebook, Voice Vault, RAG, Prompt Caching.
  */
 async function generateWithClaude(
     sourceText: string,
@@ -81,7 +108,8 @@ async function generateWithClaude(
         throw new Error("Claude API key required. Add one in Settings.");
     }
 
-    const prompt = await buildClaudePrompt(sourceText, platform, ragResults);
+    const architectResult = await runArchitect(sourceText);
+    const prompt = await buildClaudePrompt(sourceText, platform, ragResults, architectResult);
 
     const res = await fetch("/.netlify/functions/ai-writer", {
         method: "POST",

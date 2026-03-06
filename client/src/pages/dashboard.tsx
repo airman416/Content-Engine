@@ -21,10 +21,12 @@ import {
   Check,
 } from "lucide-react";
 import { aiPunchier, aiHater, aiShaan, runGeneration } from "@/lib/api";
+import { approveDraft } from "@/lib/draftActions";
 import { fetchOllamaModels } from "@/lib/agenticPipeline";
 import type { ModelChoice } from "@/lib/agenticPipeline";
 import { AnimatePresence, motion } from "framer-motion";
 import { initOramaIndex } from "@/lib/oramaSearch";
+import { loadTrainingData } from "@/lib/trainingData";
 import { useToast } from "@/hooks/use-toast";
 import {
   ResizablePanelGroup,
@@ -56,6 +58,8 @@ export default function Dashboard() {
     triggerExport,
     selectedModel,
     setSelectedModel,
+    lastContextPostIds,
+    openRejectPopover,
   } = useHopperStore();
 
   const { toast } = useToast();
@@ -228,8 +232,9 @@ export default function Dashboard() {
   }, [setSourcePosts, setDrafts]);
 
   useEffect(() => {
-    loadFromCache().then(() => {
-      // Initialize the Orama RAG index after loading cached posts
+    loadFromCache().then(async () => {
+      // Load training_data.jsonl into Historical_Posts, then init RAG index
+      await loadTrainingData();
       initOramaIndex().catch(console.error);
     });
   }, [loadFromCache]);
@@ -299,20 +304,21 @@ export default function Dashboard() {
     { preventDefault: true, ignoreEventWhen: ignoreWhenTyping },
   );
 
-  // ── A: Approve — save to vault (no weight_score updates) ──
+  // ── A: Approve — save to vault, increment weight_score on RAG context posts ──
   useHotkeys(
     "a",
     async () => {
       if (!activeDraft?.id) return;
       pushHistory();
 
-      await db.approved_vault.add({
-        platform_format: activeTab,
-        final_text: activeDraft.content,
-        timestamp: new Date().toISOString(),
+      await approveDraft({
+        draftId: activeDraft.id,
+        sourcePostId: activeDraft.sourcePostId,
+        platform: activeTab,
+        finalText: activeDraft.content,
+        contextPostIds: lastContextPostIds,
       });
 
-      await db.drafts.update(activeDraft.id, { status: "approved" });
       if (soundEnabled) playApproveSound();
       toast({ title: "Draft approved & saved to vault" });
       const allDrafts = await db.drafts.toArray();
@@ -323,45 +329,28 @@ export default function Dashboard() {
       enabled: !!activeDraft,
       ignoreEventWhen: ignoreWhenTyping,
     },
-    [activeDraft, activeTab, soundEnabled, pushHistory],
+    [activeDraft, activeTab, lastContextPostIds, soundEnabled, pushHistory],
   );
 
-  // ── R: Reject — clear from UI, save raw text to rejected_vault ──
+  // ── R: Reject — show reason popover (handled by Workshop) ──
   useHotkeys(
     "r",
-    async () => {
+    () => {
       if (!activeDraft?.id) return;
       pushHistory();
-
-      // Save raw text to rejected_vault for analytics
-      await db.rejected_vault.add({
-        rejected_text: activeDraft.content,
-        reason: "rejected",
-        timestamp: new Date().toISOString(),
-      });
-
-      await db.trash.add({
-        draftId: activeDraft.id,
+      openRejectPopover({
+        id: activeDraft.id,
         sourcePostId: activeDraft.sourcePostId,
         content: activeDraft.content,
         platform: activeDraft.platform,
-        rejectedAt: new Date().toISOString(),
-        originalContent:
-          sourcePosts.find((p) => p.id === activeDraft.sourcePostId)
-            ?.content || "",
       });
-
-      await db.drafts.update(activeDraft.id, { status: "rejected" });
-      if (soundEnabled) playRejectSound();
-      const allDrafts = await db.drafts.toArray();
-      setDrafts(allDrafts);
     },
     {
       preventDefault: true,
       enabled: !!activeDraft,
       ignoreEventWhen: ignoreWhenTyping,
     },
-    [activeDraft, soundEnabled, sourcePosts, pushHistory],
+    [activeDraft, pushHistory, openRejectPopover],
   );
 
   useHotkeys(

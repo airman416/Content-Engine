@@ -88,6 +88,21 @@ interface HopperState {
   /** IDs of the historical posts used as RAG context in the last generation */
   lastContextPostIds: number[];
   setLastContextPostIds: (ids: number[]) => void;
+
+  /** Reject reason popover — when set, show popover before completing reject */
+  pendingReject: {
+    draftId: number;
+    sourcePostId: number;
+    content: string;
+    platform: string;
+  } | null;
+  openRejectPopover: (draft: {
+    id: number;
+    sourcePostId: number;
+    content: string;
+    platform: string;
+  }) => void;
+  closeRejectPopover: () => void;
 }
 
 export const useHopperStore = create<HopperState>((set, get) => ({
@@ -227,4 +242,16 @@ export const useHopperStore = create<HopperState>((set, get) => ({
 
   lastContextPostIds: [],
   setLastContextPostIds: (ids) => set({ lastContextPostIds: ids }),
+
+  pendingReject: null,
+  openRejectPopover: (draft) =>
+    set({
+      pendingReject: {
+        draftId: draft.id,
+        sourcePostId: draft.sourcePostId,
+        content: draft.content,
+        platform: draft.platform,
+      },
+    }),
+  closeRejectPopover: () => set({ pendingReject: null }),
 }));
