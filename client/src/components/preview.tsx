@@ -31,20 +31,25 @@ const FONTS = [
 ];
 
 const DIMENSIONS: { key: "1080x1080" | "1080x1350" | "1080x1920"; label: string; w: number; h: number }[] = [
-  { key: "1080x1080", label: "Square", w: 1080, h: 1080 },
   { key: "1080x1350", label: "Portrait", w: 1080, h: 1350 },
+  { key: "1080x1080", label: "Square", w: 1080, h: 1080 },
   { key: "1080x1920", label: "Story", w: 1080, h: 1920 },
 ];
 
 const PADDING_MAP = { sm: 32, md: 64, lg: 128, xl: 256 } as const;
 const PADDING_PREVIEW_MAP = { sm: 16, md: 32, lg: 48, xl: 64 } as const;
 
+// Hampton brand colors
+const HAMPTON_BG = "#EEECEA";
+const HAMPTON_TEXT = "#111111";
+const HAMPTON_GOLD = "#C9B99A";
+
 const SOLID_COLORS = [
+  { label: "Hampton Warm", value: HAMPTON_BG },
+  { label: "Pure White", value: "#FFFFFF" },
   { label: "Hampton Cream", value: "#F5F5F0" },
-  { label: "White", value: "#FFFFFF" },
-  { label: "Light Gray", value: "#F0F0F0" },
+  { label: "Hampton Dark", value: "#1C2B22" },
   { label: "Charcoal", value: "#1A1A2E" },
-  { label: "Hampton Green", value: "#1B4332" },
   { label: "Deep Navy", value: "#0D1B2A" },
 ];
 
@@ -73,7 +78,7 @@ function loadGoogleFont(font: string) {
   document.head.appendChild(link);
 }
 
-/** Draw a carousel slide to canvas and return PNG blob. Uses Canvas API directly to avoid html-to-image font rendering issues. */
+/** Draw a Hampton-branded carousel slide to canvas and return PNG blob. */
 async function drawSlideToBlob(
   slide: string,
   index: number,
@@ -85,68 +90,138 @@ async function drawSlideToBlob(
     textColor: string;
     font: string;
     align: "left" | "center" | "right";
+    authorHandle?: string;
+    logoDataUrl?: string | null;
   }
 ): Promise<Blob> {
-  const { width, height, bgColor, textColor, font, align } = opts;
-  const padding = Math.round(40 * (width / 340));
-  const contentWidth = width - padding * 2;
-  const contentHeight = height - padding * 2;
+  const { width, height, bgColor, textColor, font, align, authorHandle = "thesamparr", logoDataUrl } = opts;
 
-  const slideLength = slide.length;
-  let fontSize = 22;
-  if (slideLength > 200) fontSize = 16;
-  else if (slideLength > 100) fontSize = 18;
-  fontSize = Math.round(fontSize * (width / 340));
-  const lineHeight = 1.6;
+  // Layout constants scaled to canvas size
+  const scale = width / 1080;
+  const paddingX = Math.round(80 * scale);
+  const paddingTop = Math.round(100 * scale);
+  const footerH = Math.round(100 * scale);
+  const footerY = height - footerH;
+  const contentWidth = width - paddingX * 2;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d")!;
 
+  // Background
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, width, height);
 
+  // ── Content area (split into heading + body if slide contains a blank line or "\n\n") ──
+  const parts = slide.split(/\n\n+/);
+  const headingText = parts[0]?.trim() ?? "";
+  const bodyText = parts.slice(1).join("\n\n").trim();
+
+  const headingLen = headingText.length;
+  let headingSize = Math.round(90 * scale);
+  if (headingLen > 120) headingSize = Math.round(60 * scale);
+  else if (headingLen > 80) headingSize = Math.round(70 * scale);
+  else if (headingLen > 50) headingSize = Math.round(80 * scale);
+
+  const bodySize = Math.round(38 * scale);
+  const lineHeight = 1.25;
+
+  // Helper: wrap text into lines
+  function wrapText(text: string, maxWidth: number, fSize: number, weight: string): string[] {
+    ctx.font = `${weight} ${fSize}px "${font}", sans-serif`;
+    const words = text.split(/\s+/);
+    const lines: string[] = [];
+    let cur = "";
+    for (const word of words) {
+      const test = cur ? `${cur} ${word}` : word;
+      if (ctx.measureText(test).width > maxWidth && cur) {
+        lines.push(cur);
+        cur = word;
+      } else {
+        cur = test;
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
+  const headingLines = wrapText(headingText, contentWidth, headingSize, "800");
+  const bodyLines = bodyText ? wrapText(bodyText, contentWidth, bodySize, "700") : [];
+
+  const totalHeadingH = headingLines.length * headingSize * lineHeight;
+  const bodyGap = bodyText ? Math.round(32 * scale) : 0;
+  const totalBodyH = bodyLines.length * bodySize * lineHeight;
+  const blockH = totalHeadingH + bodyGap + totalBodyH;
+
+  // Vertically center the text block in the space above the footer
+  const availableH = footerY - paddingTop;
+  let y = paddingTop + (availableH - blockH) / 2;
+  // Clamp so it doesn't go above the top padding
+  if (y < paddingTop) y = paddingTop;
+
+  function lineX(lineWidth: number): number {
+    if (align === "center") return paddingX + (contentWidth - lineWidth) / 2;
+    if (align === "right") return paddingX + contentWidth - lineWidth;
+    return paddingX;
+  }
+
+  // Draw heading
   ctx.fillStyle = textColor;
-  ctx.font = `${fontSize}px "${font}", sans-serif`;
+  ctx.font = `800 ${headingSize}px "${font}", sans-serif`;
   ctx.textBaseline = "top";
-
-  const words = slide.split(/\s+/);
-  const lines: string[] = [];
-  let currentLine = "";
-
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
-    if (metrics.width > contentWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-
-  const totalTextHeight = lines.length * fontSize * lineHeight;
-  let y = padding + (contentHeight - totalTextHeight) / 2;
-
-  for (const line of lines) {
-    let x = padding;
-    if (align === "center") {
-      x = padding + (contentWidth - ctx.measureText(line).width) / 2;
-    } else if (align === "right") {
-      x = width - padding - ctx.measureText(line).width;
-    }
-    ctx.fillText(line, x, y);
-    y += fontSize * lineHeight;
+  for (const line of headingLines) {
+    const lw = ctx.measureText(line).width;
+    ctx.fillText(line, lineX(lw), y);
+    y += headingSize * lineHeight;
   }
 
-  ctx.font = `${Math.round(11 * (width / 340))}px monospace`;
+  // Draw body
+  if (bodyLines.length > 0) {
+    y += bodyGap;
+    ctx.font = `700 ${bodySize}px "${font}", sans-serif`;
+    for (const line of bodyLines) {
+      const lw = ctx.measureText(line).width;
+      ctx.fillText(line, lineX(lw), y);
+      y += bodySize * lineHeight;
+    }
+  }
+
+  // ── Footer ──
+  const footerCenterY = footerY + footerH / 2;
+  const footerFontSize = Math.round(28 * scale);
+  ctx.font = `700 ${footerFontSize}px "${font}", sans-serif`;
+  ctx.textBaseline = "middle";
   ctx.fillStyle = textColor;
-  ctx.globalAlpha = 0.5;
-  const badge = `${index + 1}/${total}`;
-  ctx.fillText(badge, width - padding - ctx.measureText(badge).width, padding);
-  ctx.globalAlpha = 1;
+
+  // Left: "Hampton"
+  ctx.fillText("Hampton", paddingX, footerCenterY);
+
+  // Right: "@handle"
+  const handleText = `@${authorHandle}`;
+  const handleW = ctx.measureText(handleText).width;
+  ctx.fillText(handleText, width - paddingX - handleW, footerCenterY);
+
+  // Center: Hampton "H" logo (image) or fallback stylized H
+  const logoSize = Math.round(52 * scale);
+  if (logoDataUrl) {
+    await new Promise<void>((res) => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, width / 2 - logoSize / 2, footerCenterY - logoSize / 2, logoSize, logoSize);
+        res();
+      };
+      img.onerror = () => res();
+      img.src = logoDataUrl;
+    });
+  } else {
+    // Fallback: draw a styled "H"
+    ctx.font = `900 ${logoSize}px serif`;
+    ctx.fillStyle = "#C9B99A";
+    const hW = ctx.measureText("H").width;
+    ctx.fillText("H", width / 2 - hW / 2, footerCenterY);
+    ctx.fillStyle = textColor;
+  }
 
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -631,6 +706,7 @@ function CarouselSlideCard({
   font,
   align,
   dimension,
+  authorHandle,
 }: {
   slide: string;
   index: number;
@@ -641,16 +717,32 @@ function CarouselSlideCard({
   font: string;
   align: "left" | "center" | "right";
   dimension: "1080x1080" | "1080x1350" | "1080x1920";
+  authorHandle?: string;
 }) {
   const dimConfig = DIMENSIONS.find((d) => d.key === dimension)!;
   const aspect = dimConfig.h / dimConfig.w;
   const previewWidth = 340;
   const previewHeight = previewWidth * aspect;
 
-  const slideLength = slide.length;
-  let fontSize = 22;
-  if (slideLength > 200) fontSize = 16;
-  else if (slideLength > 100) fontSize = 18;
+  // Split slide content into heading + body (separated by blank line)
+  const parts = slide.split(/\n\n+/);
+  const headingText = parts[0]?.trim() ?? "";
+  const bodyText = parts.slice(1).join("\n\n").trim();
+
+  // Scale font sizes to previewWidth (340px represents 1080px canvas)
+  const scale = previewWidth / 1080;
+
+  const headingLen = headingText.length;
+  let headingSize = Math.round(90 * scale);
+  if (headingLen > 120) headingSize = Math.round(60 * scale);
+  else if (headingLen > 80) headingSize = Math.round(70 * scale);
+  else if (headingLen > 50) headingSize = Math.round(80 * scale);
+
+  const bodySize = Math.round(38 * scale);
+  const footerFontSize = Math.round(28 * scale);
+  const logoSize = Math.round(52 * scale);
+
+  const handle = "thesamparr";
 
   return (
     <div
@@ -662,29 +754,111 @@ function CarouselSlideCard({
         color: textColor,
         fontFamily: `'${font}', sans-serif`,
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "40px",
-        textAlign: align,
+        flexDirection: "column",
         overflow: "hidden",
         position: "relative",
+        boxSizing: "border-box",
       }}
     >
+      {/* Content area */}
       <div
         style={{
-          position: "absolute",
-          top: "12px",
-          right: "16px",
-          fontSize: "11px",
-          opacity: 0.5,
-          fontFamily: "monospace",
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          padding: `${Math.round(32 * scale)}px ${Math.round(80 * scale)}px`,
+          textAlign: align,
+          boxSizing: "border-box",
         }}
       >
-        {index + 1}/{total}
+        {/* Heading */}
+        <p
+          style={{
+            fontSize: `${headingSize}px`,
+            fontWeight: 800,
+            lineHeight: 1.18,
+            margin: 0,
+            wordWrap: "break-word",
+            overflowWrap: "break-word",
+            color: textColor,
+          }}
+        >
+          {headingText}
+        </p>
+        {/* Body */}
+        {bodyText && (
+          <p
+            style={{
+              fontSize: `${bodySize}px`,
+              fontWeight: 700,
+              lineHeight: 1.45,
+              margin: `${Math.round(14 * scale)}px 0 0`,
+              wordWrap: "break-word",
+              overflowWrap: "break-word",
+              color: textColor,
+            }}
+          >
+            {bodyText}
+          </p>
+        )}
       </div>
-      <p style={{ fontSize: `${fontSize}px`, lineHeight: 1.6, maxWidth: "100%", wordWrap: "break-word" }}>
-        {slide}
-      </p>
+
+      {/* Hampton footer — logo is absolutely centered on the full slide width */}
+      <div
+        style={{
+          position: "relative",
+          height: `${Math.round(100 * scale)}px`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: `0 ${Math.round(80 * scale)}px`,
+          boxSizing: "border-box",
+          flexShrink: 0,
+        }}
+      >
+        {/* Left: Hampton wordmark */}
+        <span
+          style={{
+            fontSize: `${footerFontSize}px`,
+            fontWeight: 700,
+            color: textColor,
+            letterSpacing: "-0.01em",
+          }}
+        >
+          Hampton
+        </span>
+
+        {/* Center: The H logo — truly centered via absolute positioning */}
+        <img
+          src="/hampton-logo.jpg"
+          alt="Hampton H"
+          style={{
+            position: "absolute",
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: `${logoSize}px`,
+            height: `${logoSize}px`,
+            objectFit: "contain",
+            borderRadius: "3px",
+          }}
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = "none";
+          }}
+        />
+
+        {/* Right: @handle */}
+        <span
+          style={{
+            fontSize: `${footerFontSize}px`,
+            fontWeight: 700,
+            color: textColor,
+            letterSpacing: "-0.01em",
+          }}
+        >
+          @{handle}
+        </span>
+      </div>
     </div>
   );
 }
@@ -753,8 +927,8 @@ export default function Preview() {
   const LINKEDIN_LOCAL_PROFILE = "/linkedin-profile.jpeg";
   const effectivePhoto = showMockup
     ? (activeTab === "linkedin"
-        ? LINKEDIN_LOCAL_PROFILE
-        : (selectedPost?.profilePhoto || profilePhoto || null))
+      ? LINKEDIN_LOCAL_PROFILE
+      : (selectedPost?.profilePhoto || profilePhoto || null))
     : (selectedPost?.profilePhoto || profilePhoto || null);
 
   useEffect(() => {
@@ -815,10 +989,25 @@ export default function Preview() {
         const zip = new JSZip();
         const dimConfig = DIMENSIONS.find((d) => d.key === assetDimension)!;
         const fontFamily = assetFont || "Inter";
+        const authorHandleExport = "thesamparr";
+
+        // Pre-load the Hampton logo as a data URL for canvas export
+        let hamptonLogoDataUrl: string | null = null;
+        try {
+          const resp = await fetch("/hampton-logo.jpg");
+          const logoBlob = await resp.blob();
+          hamptonLogoDataUrl = await new Promise<string>((res, rej) => {
+            const fr = new FileReader();
+            fr.onload = () => res(fr.result as string);
+            fr.onerror = rej;
+            fr.readAsDataURL(logoBlob);
+          });
+        } catch { /* ok, will use fallback H */ }
 
         if ("fonts" in document) {
           await document.fonts.ready;
-          await document.fonts.load(`16px "${fontFamily}"`);
+          await document.fonts.load(`800 ${dimConfig.w / 12}px "${fontFamily}"`);
+          await document.fonts.load(`700 ${dimConfig.w / 12}px "${fontFamily}"`);
         }
 
         for (let i = 0; i < slides.length; i++) {
@@ -829,6 +1018,8 @@ export default function Preview() {
             textColor: assetTextColor,
             font: fontFamily,
             align: assetAlign,
+            authorHandle: authorHandleExport,
+            logoDataUrl: hamptonLogoDataUrl,
           });
           zip.file(`slide-${i + 1}.png`, blob);
         }
@@ -925,11 +1116,10 @@ export default function Preview() {
               key={p}
               data-testid={`button-padding-${p}`}
               onClick={() => setMockupPadding(p)}
-              className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
-                mockupPadding === p
-                  ? "bg-[#111827] text-white border-[#111827]"
-                  : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
-              }`}
+              className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${mockupPadding === p
+                ? "bg-[#111827] text-white border-[#111827]"
+                : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+                }`}
               style={{ borderRadius: "3px" }}
             >
               {p.toUpperCase()}
@@ -944,11 +1134,10 @@ export default function Preview() {
           <button
             data-testid="button-bg-solid"
             onClick={() => setMockupBgType("solid")}
-            className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
-              mockupBgType === "solid"
-                ? "bg-[#111827] text-white border-[#111827]"
-                : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
-            }`}
+            className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${mockupBgType === "solid"
+              ? "bg-[#111827] text-white border-[#111827]"
+              : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+              }`}
             style={{ borderRadius: "3px" }}
           >
             Solid
@@ -956,11 +1145,10 @@ export default function Preview() {
           <button
             data-testid="button-bg-gradient"
             onClick={() => setMockupBgType("gradient")}
-            className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
-              mockupBgType === "gradient"
-                ? "bg-[#111827] text-white border-[#111827]"
-                : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
-            }`}
+            className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${mockupBgType === "gradient"
+              ? "bg-[#111827] text-white border-[#111827]"
+              : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+              }`}
             style={{ borderRadius: "3px" }}
           >
             Gradient
@@ -976,9 +1164,8 @@ export default function Preview() {
               data-testid={`button-solid-${c.value}`}
               onClick={() => setMockupBgColor(c.value)}
               title={c.label}
-              className={`w-7 h-7 border-2 transition-all ${
-                mockupBgColor === c.value ? "border-[#111827] scale-110" : "border-[#E5E5E5] hover:border-[#999]"
-              }`}
+              className={`w-7 h-7 border-2 transition-all ${mockupBgColor === c.value ? "border-[#111827] scale-110" : "border-[#E5E5E5] hover:border-[#999]"
+                }`}
               style={{ backgroundColor: c.value, borderRadius: "4px" }}
             />
           ))}
@@ -1001,9 +1188,8 @@ export default function Preview() {
               data-testid={`button-gradient-${g.label}`}
               onClick={() => setMockupGradient(g.value)}
               title={g.label}
-              className={`w-7 h-7 border-2 transition-all ${
-                mockupGradient === g.value ? "border-[#111827] scale-110" : "border-[#E5E5E5] hover:border-[#999]"
-              }`}
+              className={`w-7 h-7 border-2 transition-all ${mockupGradient === g.value ? "border-[#111827] scale-110" : "border-[#E5E5E5] hover:border-[#999]"
+                }`}
               style={{ background: g.value, borderRadius: "4px" }}
             />
           ))}
@@ -1018,11 +1204,10 @@ export default function Preview() {
               key={r}
               data-testid={`button-ratio-${r}`}
               onClick={() => setMockupAspectRatio(r)}
-              className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
-                mockupAspectRatio === r
-                  ? "bg-[#111827] text-white border-[#111827]"
-                  : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
-              }`}
+              className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${mockupAspectRatio === r
+                ? "bg-[#111827] text-white border-[#111827]"
+                : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+                }`}
               style={{ borderRadius: "3px" }}
             >
               {r === "auto" ? "Auto" : r}
@@ -1036,11 +1221,10 @@ export default function Preview() {
         <button
           data-testid="button-toggle-metrics"
           onClick={() => setMockupShowMetrics(!mockupShowMetrics)}
-          className={`h-7 px-2.5 text-[11px] font-mono border transition-colors inline-flex items-center gap-1.5 ${
-            mockupShowMetrics
-              ? "bg-[#111827] text-white border-[#111827]"
-              : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
-          }`}
+          className={`h-7 px-2.5 text-[11px] font-mono border transition-colors inline-flex items-center gap-1.5 ${mockupShowMetrics
+            ? "bg-[#111827] text-white border-[#111827]"
+            : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+            }`}
           style={{ borderRadius: "3px" }}
         >
           {mockupShowMetrics ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
@@ -1069,37 +1253,37 @@ export default function Preview() {
     if (showMockup) {
       return (
         <div style={{ display: "flex", justifyContent: "center" }}>
-        <div
-          ref={previewRef}
-          data-testid="mockup-canvas"
-          style={{
-            background: canvasBg,
-            padding: `${canvasPadding}px`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            ...getCanvasStyle(),
-          }}
-        >
-          {activeTab === "twitter" && (
-            <MockTwitterCard
-              content={content}
-              profileBase64={mockupProfileBase64}
-              showMetrics={mockupShowMetrics}
-              metrics={selectedPost?.metrics}
-              mediaUrls={selectedPost?.mediaUrls}
-            />
-          )}
-          {activeTab === "linkedin" && (
-            <MockLinkedInCard
-              content={content}
-              profileBase64={mockupProfileBase64}
-              showMetrics={mockupShowMetrics}
-              metrics={selectedPost?.metrics}
-              mediaUrls={selectedPost?.mediaUrls}
-            />
-          )}
-        </div>
+          <div
+            ref={previewRef}
+            data-testid="mockup-canvas"
+            style={{
+              background: canvasBg,
+              padding: `${canvasPadding}px`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              ...getCanvasStyle(),
+            }}
+          >
+            {activeTab === "twitter" && (
+              <MockTwitterCard
+                content={content}
+                profileBase64={mockupProfileBase64}
+                showMetrics={mockupShowMetrics}
+                metrics={selectedPost?.metrics}
+                mediaUrls={selectedPost?.mediaUrls}
+              />
+            )}
+            {activeTab === "linkedin" && (
+              <MockLinkedInCard
+                content={content}
+                profileBase64={mockupProfileBase64}
+                showMetrics={mockupShowMetrics}
+                metrics={selectedPost?.metrics}
+                mediaUrls={selectedPost?.mediaUrls}
+              />
+            )}
+          </div>
         </div>
       );
     }
@@ -1198,6 +1382,7 @@ export default function Preview() {
                   font={assetFont}
                   align={assetAlign}
                   dimension={assetDimension}
+                  authorHandle={authorHandle}
                 />
               ))}
             </>
@@ -1238,41 +1423,41 @@ export default function Preview() {
   return (
     <div className="h-full flex flex-col bg-[#FAFAFA]">
       {selectedPost && (
-      <div className="flex items-center justify-between px-4 h-[49px] border-b border-[#E5E5E5]">
-        <div className="flex items-center gap-2">
-          <PlatformIcon className="w-3.5 h-3.5 text-[#666]" />
-          <h2 className="text-[13px] font-semibold text-[#111827] tracking-tight" data-testid="text-preview-title">
-            {showMockup ? `${label} Mockup` : `${label} Preview`}
-          </h2>
-        </div>
-        {content && (
-          <div className="flex items-center gap-1.5">
-            <button
-              data-testid="button-copy-text"
-              onClick={handleCopyText}
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 text-[11px] font-medium text-[#111827] bg-white border border-[#E5E5E5] transition-colors hover-elevate"
-              style={{ borderRadius: "3px" }}
-              title="Copy text"
-            >
-              <Copy className="w-3 h-3" />
-              Copy
-            </button>
-            <button
-              data-testid="button-download-image"
-              onClick={handleDownloadImage}
-              disabled={isExporting}
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 text-[11px] font-medium text-white border transition-colors disabled:opacity-50"
-              style={{ borderRadius: "3px", backgroundColor: "hsl(var(--primary))", borderColor: "hsl(var(--primary))" }}
-            >
-              {isExporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-              Export
-              <kbd className="ml-1 text-[9px] font-mono text-white/70 bg-white/20 px-1 py-0.5 border border-white/20 rounded-sm">
-                ⌘↵
-              </kbd>
-            </button>
+        <div className="flex items-center justify-between px-4 h-[49px] border-b border-[#E5E5E5]">
+          <div className="flex items-center gap-2">
+            <PlatformIcon className="w-3.5 h-3.5 text-[#666]" />
+            <h2 className="text-[13px] font-semibold text-[#111827] tracking-tight" data-testid="text-preview-title">
+              {showMockup ? `${label} Mockup` : `${label} Preview`}
+            </h2>
           </div>
-        )}
-      </div>
+          {content && (
+            <div className="flex items-center gap-1.5">
+              <button
+                data-testid="button-copy-text"
+                onClick={handleCopyText}
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 text-[11px] font-medium text-[#111827] bg-white border border-[#E5E5E5] transition-colors hover-elevate"
+                style={{ borderRadius: "3px" }}
+                title="Copy text"
+              >
+                <Copy className="w-3 h-3" />
+                Copy
+              </button>
+              <button
+                data-testid="button-download-image"
+                onClick={handleDownloadImage}
+                disabled={isExporting}
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 text-[11px] font-medium text-white border transition-colors disabled:opacity-50"
+                style={{ borderRadius: "3px", backgroundColor: "hsl(var(--primary))", borderColor: "hsl(var(--primary))" }}
+              >
+                {isExporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                Export
+                <kbd className="ml-1 text-[9px] font-mono text-white/70 bg-white/20 px-1 py-0.5 border border-white/20 rounded-sm">
+                  ⌘↵
+                </kbd>
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {showControls && content && (
@@ -1328,11 +1513,10 @@ export default function Preview() {
                       key={dim.key}
                       data-testid={`button-dim-${dim.key}`}
                       onClick={() => setAssetDimension(dim.key)}
-                      className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${
-                        assetDimension === dim.key
-                          ? "bg-[#111827] text-white border-[#111827]"
-                          : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
-                      }`}
+                      className={`h-7 px-2.5 text-[11px] font-mono border transition-colors ${assetDimension === dim.key
+                        ? "bg-[#111827] text-white border-[#111827]"
+                        : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+                        }`}
                       style={{ borderRadius: "3px" }}
                     >
                       {dim.label}
@@ -1349,11 +1533,10 @@ export default function Preview() {
                       key={a}
                       data-testid={`button-align-${a}`}
                       onClick={() => setAssetAlign(a)}
-                      className={`h-7 w-8 flex items-center justify-center border transition-colors ${
-                        assetAlign === a
-                          ? "bg-[#111827] text-white border-[#111827]"
-                          : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
-                      }`}
+                      className={`h-7 w-8 flex items-center justify-center border transition-colors ${assetAlign === a
+                        ? "bg-[#111827] text-white border-[#111827]"
+                        : "bg-white text-[#666] border-[#E5E5E5] hover:border-[#999]"
+                        }`}
                       style={{ borderRadius: "3px" }}
                     >
                       {a === "left" ? <AlignLeft className="w-3 h-3" /> : a === "center" ? <AlignCenter className="w-3 h-3" /> : <AlignRight className="w-3 h-3" />}
