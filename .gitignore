@@ -8,4 +8,5 @@ vite.config.ts.*
 
 # Local Netlify folder
 .netlify
-/sam-llama-3-lora
+
+sam-llama-3-lora
